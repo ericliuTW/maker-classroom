@@ -21,38 +21,43 @@ maker-classroom/
 │   ├── components/                    # UI 組件
 │   ├── hooks/                         # Custom hooks
 │   ├── stores/                        # Zustand stores
-│   ├── lib/                           # Supabase client、utilities
+│   ├── lib/                           # Firebase client/admin、utilities
 │   └── types/                         # TypeScript 型別
-├── supabase/migrations/               # SQL migration 檔
+├── scripts/seed.ts                    # Firestore 種子資料
 └── .env.local.example                 # 環境變數範本
 ```
 
 ## 技術棧
 - Next.js 16 (App Router) + TypeScript + Tailwind CSS + shadcn/ui
-- Supabase (PostgreSQL + RLS + Auth)
+- Firebase (Firestore + Auth)
 - Zustand (狀態管理)
 - html5-qrcode (條碼/QR掃描)
 - Canvas API (教室配置圖)
 - Vercel (部署)
 
 ## 身份系統
-- 教師：Supabase Auth (email/password)
+- 教師：Firebase Auth (email/password)
 - 學生：使用碼（無個資、session-based）
 
-## 資料庫表格
+## Firestore Collections
 categories, items, item_locations, classroom_config, access_codes, transactions, projects, knowledge_base, bookings
+
+## 部署
+- Vercel: https://maker-classroom.vercel.app
+- Firebase Project: maker-classroom-cf606
 
 ## 常用指令
 ```bash
 npm run dev    # 開發伺服器
 npm run build  # 建置
+npx tsx scripts/seed.ts  # 寫入種子資料
 ```
 
 ## 環境變數
-- NEXT_PUBLIC_SUPABASE_URL
-- NEXT_PUBLIC_SUPABASE_ANON_KEY
-- SUPABASE_SERVICE_ROLE_KEY
+- NEXT_PUBLIC_FIREBASE_API_KEY, AUTH_DOMAIN, PROJECT_ID, STORAGE_BUCKET, MESSAGING_SENDER_ID, APP_ID
+- FIREBASE_SERVICE_ACCOUNT_KEY (JSON string)
 - AI_API_KEY, AI_BASE_URL, AI_MODEL
 
 ## CHANGELOG
-- 2026-04-13：初始建立 — 全部七大模組（庫存、異動、教室配置、掃碼、AI專案、知識庫、預約排程）+ Auth + 使用碼系統
+- 2026-04-13：初始建立 — 全部七大模組 + Auth + 使用碼系統
+- 2026-04-13：從 Supabase 遷移到 Firebase (Firestore + Auth)，部署至 Vercel

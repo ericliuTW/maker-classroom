@@ -1,59 +1,51 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createServerSupabase } from "@/lib/supabase-server"
+import { adminDb } from "@/lib/firebase-admin"
+import { verifyTeacher } from "@/lib/auth-helper"
 
-export async function GET() {
-  const supabase = await createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+export async function GET(request: NextRequest) {
+  const uid = await verifyTeacher(request)
+  if (!uid) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  const { data, error } = await supabase
-    .from("access_codes")
-    .select("*")
-    .order("created_at", { ascending: false })
+  const snapshot = await adminDb
+    .collection("access_codes")
+    .orderBy("created_at", "desc")
+    .get()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
   return NextResponse.json(data)
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = await createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const uid = await verifyTeacher(request)
+  if (!uid) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const body = await request.json()
   const code = body.code || generateCode()
 
-  const { data, error } = await supabase
-    .from("access_codes")
-    .insert({
-      code: code.toUpperCase(),
-      label: body.label || null,
-      created_by: user.id,
-      expires_at: body.expires_at || null,
-      is_active: true,
-    })
-    .select()
-    .single()
+  const docRef = await adminDb.collection("access_codes").add({
+    code: code.toUpperCase(),
+    label: body.label || null,
+    created_by: uid,
+    expires_at: body.expires_at || null,
+    is_active: true,
+    created_at: new Date().toISOString(),
+  })
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data)
+  const doc = await docRef.get()
+  return NextResponse.json({ id: doc.id, ...doc.data() })
 }
 
 export async function PATCH(request: NextRequest) {
-  const supabase = await createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const uid = await verifyTeacher(request)
+  if (!uid) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const body = await request.json()
-  const { data, error } = await supabase
-    .from("access_codes")
-    .update({ is_active: body.is_active })
-    .eq("id", body.id)
-    .select()
-    .single()
+  await adminDb.collection("access_codes").doc(body.id).update({
+    is_active: body.is_active,
+  })
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data)
+  const doc = await adminDb.collection("access_codes").doc(body.id).get()
+  return NextResponse.json({ id: doc.id, ...doc.data() })
 }
 
 function generateCode(): string {

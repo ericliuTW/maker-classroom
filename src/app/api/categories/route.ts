@@ -1,29 +1,29 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createServiceClient, createServerSupabase } from "@/lib/supabase-server"
+import { adminDb } from "@/lib/firebase-admin"
+import { verifyTeacher } from "@/lib/auth-helper"
 
 export async function GET() {
-  const supabase = createServiceClient()
-  const { data, error } = await supabase
-    .from("categories")
-    .select("*")
-    .order("name")
+  const snapshot = await adminDb
+    .collection("categories")
+    .orderBy("name")
+    .get()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
   return NextResponse.json(data)
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = await createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const uid = await verifyTeacher(request)
+  if (!uid) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const body = await request.json()
-  const { data, error } = await supabase
-    .from("categories")
-    .insert({ name: body.name, icon: body.icon || "package", description: body.description })
-    .select()
-    .single()
+  const docRef = await adminDb.collection("categories").add({
+    name: body.name,
+    icon: body.icon || "package",
+    description: body.description || null,
+    created_at: new Date().toISOString(),
+  })
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data)
+  const doc = await docRef.get()
+  return NextResponse.json({ id: doc.id, ...doc.data() })
 }

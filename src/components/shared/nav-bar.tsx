@@ -39,8 +39,10 @@ export function NavBar() {
 
   const handleLogout = async () => {
     if (isTeacher) {
-      const { createClient } = await import("@/lib/supabase-client")
-      await createClient().auth.signOut()
+      const { auth } = await import("@/lib/firebase-client")
+      const { signOut } = await import("firebase/auth")
+      await signOut(auth)
+      document.cookie = "firebase_token=; max-age=0; path=/"
     }
     document.cookie = "student_session=; max-age=0; path=/"
     reset()

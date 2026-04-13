@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createServiceClient } from "@/lib/supabase-server"
+import { adminDb } from "@/lib/firebase-admin"
 
 export async function POST(request: NextRequest) {
   const body = await request.json()
@@ -10,25 +10,18 @@ export async function POST(request: NextRequest) {
   }
 
   // Fetch current inventory
-  const supabase = createServiceClient()
-  const { data: items } = await supabase
-    .from("items")
-    .select("name, quantity, unit, category:categories(name)")
-    .gt("quantity", 0)
+  const itemsSnapshot = await adminDb.collection("items").where("quantity", ">", 0).get()
+  const inventoryList = itemsSnapshot.docs
+    .map((d) => d.data())
+    .map((i: any) => `${i.name} (${i.quantity}${i.unit})`)
+    .join("\n")
 
-  const inventoryList = (items || []).map((i: any) =>
-    `${i.name} (${i.quantity}${i.unit}, 分類:${i.category?.name || '未分類'})`
-  ).join("\n")
-
-  // Fetch knowledge base for reference
-  const { data: knowledge } = await supabase
-    .from("knowledge_base")
-    .select("title, description, required_materials, required_equipment, difficulty")
-    .limit(20)
-
-  const knowledgeRef = (knowledge || []).map((k: any) =>
-    `- ${k.title}: ${k.description} (難度:${k.difficulty})`
-  ).join("\n")
+  // Fetch knowledge base
+  const knowledgeSnapshot = await adminDb.collection("knowledge_base").limit(20).get()
+  const knowledgeRef = knowledgeSnapshot.docs
+    .map((d) => d.data())
+    .map((k: any) => `- ${k.title}: ${k.description} (難度:${k.difficulty})`)
+    .join("\n")
 
   const prompt = `你是一位Maker教室的專案顧問。學生想做以下專案：
 
@@ -60,7 +53,6 @@ ${knowledgeRef || "（尚無參考專案）"}
   try {
     const aiResponse = await callAI(prompt)
 
-    // Try to parse JSON from AI response
     let parsed
     try {
       const jsonStr = aiResponse.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim()
@@ -69,29 +61,26 @@ ${knowledgeRef || "（尚無參考專案）"}
       parsed = { summary: aiResponse, materials: [], equipment: [], todo: [], tips: "" }
     }
 
-    // Save project to database
-    const { data: project, error } = await supabase
-      .from("projects")
-      .insert({
-        title,
-        description,
-        ai_response: aiResponse,
-        materials_json: parsed.materials || [],
-        equipment_json: parsed.equipment || [],
-        todo_json: (parsed.todo || []).map((t: any, i: number) => ({
-          ...t, step: i + 1, done: false
-        })),
-        session_token: body.session_token || null,
-      })
-      .select()
-      .single()
+    const now = new Date().toISOString()
+    const docRef = await adminDb.collection("projects").add({
+      title,
+      description,
+      ai_response: aiResponse,
+      materials_json: parsed.materials || [],
+      equipment_json: parsed.equipment || [],
+      todo_json: (parsed.todo || []).map((t: any, i: number) => ({
+        ...t,
+        step: i + 1,
+        done: false,
+      })),
+      session_token: body.session_token || null,
+      created_at: now,
+      updated_at: now,
+    })
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-
+    const doc = await docRef.get()
     return NextResponse.json({
-      project,
+      project: { id: doc.id, ...doc.data() },
       parsed,
     })
   } catch (err: any) {
@@ -106,37 +95,24 @@ async function callAI(prompt: string): Promise<string> {
 
   if (!apiKey) throw new Error("AI_API_KEY 尚未設定")
 
-  // Gemini API format
   if (baseUrl.includes("generativelanguage.googleapis.com")) {
-    const res = await fetch(
-      `${baseUrl}/models/${model}:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
-        }),
-      }
-    )
+    const res = await fetch(`${baseUrl}/models/${model}:generateContent?key=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.7, maxOutputTokens: 4096 },
+      }),
+    })
     const data = await res.json()
     if (data.error) throw new Error(data.error.message)
     return data.candidates?.[0]?.content?.parts?.[0]?.text || ""
   }
 
-  // OpenAI-compatible API format (Claude, OpenAI, etc.)
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.7,
-      max_tokens: 4096,
-    }),
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({ model, messages: [{ role: "user", content: prompt }], temperature: 0.7, max_tokens: 4096 }),
   })
   const data = await res.json()
   if (data.error) throw new Error(data.error.message)

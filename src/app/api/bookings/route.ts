@@ -1,88 +1,85 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createServiceClient, createServerSupabase } from "@/lib/supabase-server"
+import { adminDb } from "@/lib/firebase-admin"
+import { verifyTeacher } from "@/lib/auth-helper"
 
 export async function GET(request: NextRequest) {
-  const supabase = createServiceClient()
   const searchParams = request.nextUrl.searchParams
   const status = searchParams.get("status")
-  const date = searchParams.get("date")
 
-  let query = supabase
-    .from("bookings")
-    .select("*, project:projects(id, title)")
-    .order("start_time", { ascending: true })
+  let query: FirebaseFirestore.Query = adminDb
+    .collection("bookings")
+    .orderBy("start_time", "asc")
 
-  if (status) query = query.eq("status", status)
-  if (date) {
-    query = query.gte("start_time", `${date}T00:00:00`).lte("start_time", `${date}T23:59:59`)
+  if (status) {
+    query = adminDb
+      .collection("bookings")
+      .where("status", "==", status)
+      .orderBy("start_time", "asc")
   }
 
-  const { data, error } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data)
+  const snapshot = await query.get()
+  const bookings = []
+
+  for (const doc of snapshot.docs) {
+    const booking: any = { id: doc.id, ...doc.data() }
+    if (booking.project_id) {
+      const projDoc = await adminDb.collection("projects").doc(booking.project_id).get()
+      booking.project = projDoc.exists ? { id: projDoc.id, ...projDoc.data() } : null
+    }
+    bookings.push(booking)
+  }
+
+  return NextResponse.json(bookings)
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = createServiceClient()
   const body = await request.json()
 
   // Check for conflicts
-  const { data: conflicts } = await supabase
-    .from("bookings")
-    .select("id, title, start_time, end_time")
-    .neq("status", "cancelled")
-    .lt("start_time", body.end_time)
-    .gt("end_time", body.start_time)
+  const conflictSnapshot = await adminDb
+    .collection("bookings")
+    .where("start_time", "<", body.end_time)
+    .get()
 
-  const hasConflict = (conflicts || []).length > 0
+  const conflicts = conflictSnapshot.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((b: any) => b.end_time > body.start_time && b.status !== "cancelled")
 
-  const { data, error } = await supabase
-    .from("bookings")
-    .insert({
-      project_id: body.project_id || null,
-      title: body.title,
-      equipment_items: body.equipment_items || [],
-      start_time: body.start_time,
-      end_time: body.end_time,
-      status: "pending",
-      session_token: body.session_token || null,
-      note: body.note || null,
-    })
-    .select("*, project:projects(id, title)")
-    .single()
+  const docRef = await adminDb.collection("bookings").add({
+    project_id: body.project_id || null,
+    title: body.title,
+    equipment_items: body.equipment_items || [],
+    start_time: body.start_time,
+    end_time: body.end_time,
+    status: "pending",
+    session_token: body.session_token || null,
+    note: body.note || null,
+    created_at: new Date().toISOString(),
+  })
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ ...data, conflicts: conflicts || [] })
+  const doc = await docRef.get()
+  return NextResponse.json({ id: doc.id, ...doc.data(), conflicts })
 }
 
 export async function PATCH(request: NextRequest) {
-  const supabase = await createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const uid = await verifyTeacher(request)
+  if (!uid) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const body = await request.json()
   const updates: Record<string, any> = {}
   if (body.status) updates.status = body.status
   if (body.note !== undefined) updates.note = body.note
 
-  const { data, error } = await supabase
-    .from("bookings")
-    .update(updates)
-    .eq("id", body.id)
-    .select()
-    .single()
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data)
+  await adminDb.collection("bookings").doc(body.id).update(updates)
+  const doc = await adminDb.collection("bookings").doc(body.id).get()
+  return NextResponse.json({ id: doc.id, ...doc.data() })
 }
 
 export async function DELETE(request: NextRequest) {
-  const supabase = await createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const uid = await verifyTeacher(request)
+  if (!uid) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const { id } = await request.json()
-  const { error } = await supabase.from("bookings").delete().eq("id", id)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  await adminDb.collection("bookings").doc(id).delete()
   return NextResponse.json({ success: true })
 }

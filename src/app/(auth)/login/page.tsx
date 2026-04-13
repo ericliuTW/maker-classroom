@@ -1,7 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { createClient } from "@/lib/supabase-client"
+import { auth } from "@/lib/firebase-client"
+import { signInWithEmailAndPassword } from "firebase/auth"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -18,13 +19,18 @@ export default function LoginPage() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
-    const supabase = createClient()
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) {
-      toast.error("登入失敗：" + error.message)
-    } else {
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email, password)
+      const token = await cred.user.getIdToken()
+      // Store token in cookie for middleware & API auth
+      document.cookie = `firebase_token=${token}; max-age=86400; path=/; samesite=strict`
       toast.success("登入成功")
       router.push("/inventory")
+    } catch (error: any) {
+      const msg = error.code === "auth/invalid-credential"
+        ? "帳號或密碼錯誤"
+        : error.message
+      toast.error("登入失敗：" + msg)
     }
     setLoading(false)
   }

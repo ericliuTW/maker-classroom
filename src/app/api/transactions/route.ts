@@ -1,70 +1,101 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createServiceClient, createServerSupabase } from "@/lib/supabase-server"
+import { adminDb } from "@/lib/firebase-admin"
+import { verifyTeacher } from "@/lib/auth-helper"
+import { FieldValue } from "firebase-admin/firestore"
 
 export async function GET(request: NextRequest) {
-  const supabase = createServiceClient()
   const searchParams = request.nextUrl.searchParams
   const type = searchParams.get("type")
-  const status = searchParams.get("status")
 
-  let query = supabase
-    .from("transactions")
-    .select("*, item:items(id, name, barcode, unit)")
-    .order("created_at", { ascending: false })
+  let query: FirebaseFirestore.Query = adminDb
+    .collection("transactions")
+    .orderBy("created_at", "desc")
     .limit(200)
 
-  if (type) query = query.eq("type", type)
-  if (status) query = query.eq("status", status)
+  if (type) {
+    query = adminDb
+      .collection("transactions")
+      .where("type", "==", type)
+      .orderBy("created_at", "desc")
+      .limit(200)
+  }
 
-  const { data, error } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data)
+  const snapshot = await query.get()
+  const transactions = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+
+  // Join item data
+  const itemIds = [...new Set(transactions.map((t: any) => t.item_id).filter(Boolean))]
+  const itemMap = new Map<string, any>()
+  for (const itemId of itemIds) {
+    const itemDoc = await adminDb.collection("items").doc(itemId).get()
+    if (itemDoc.exists) {
+      itemMap.set(itemId, { id: itemDoc.id, ...itemDoc.data() })
+    }
+  }
+
+  const result = transactions.map((t: any) => ({
+    ...t,
+    item: itemMap.get(t.item_id) || null,
+  }))
+
+  return NextResponse.json(result)
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = createServiceClient()
   const body = await request.json()
+  const now = new Date().toISOString()
 
-  const { data, error } = await supabase
-    .from("transactions")
-    .insert({
-      item_id: body.item_id,
-      type: body.type,
-      quantity: body.quantity || 1,
-      note: body.note || null,
-      scanned_code: body.scanned_code || null,
-      session_token: body.session_token || null,
-      status: body.type === "borrow" ? "active" : "completed",
-      due_date: body.due_date || null,
-    })
-    .select("*, item:items(id, name, barcode, unit)")
-    .single()
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  const docRef = await adminDb.collection("transactions").add({
+    item_id: body.item_id,
+    type: body.type,
+    quantity: body.quantity || 1,
+    note: body.note || null,
+    scanned_code: body.scanned_code || null,
+    session_token: body.session_token || null,
+    status: body.type === "borrow" ? "active" : "completed",
+    due_date: body.due_date || null,
+    created_at: now,
+    updated_at: now,
+  })
 
   // Update item quantity
+  const amount = body.quantity || 1
+  const itemRef = adminDb.collection("items").doc(body.item_id)
+
   if (body.type === "borrow" || body.type === "dispose") {
-    await supabase.rpc("decrement_item_quantity", { item_uuid: body.item_id, amount: body.quantity || 1 })
+    await itemRef.update({ quantity: FieldValue.increment(-amount), updated_at: now })
   } else if (body.type === "return" || body.type === "purchase") {
-    await supabase.rpc("increment_item_quantity", { item_uuid: body.item_id, amount: body.quantity || 1 })
+    await itemRef.update({ quantity: FieldValue.increment(amount), updated_at: now })
   }
 
-  return NextResponse.json(data)
+  // Auto-update status
+  const itemDoc = await itemRef.get()
+  if (itemDoc.exists) {
+    const item = itemDoc.data()!
+    let status = "available"
+    if (item.quantity <= 0) status = "out_of_stock"
+    else if (item.quantity <= item.min_quantity) status = "low_stock"
+    await itemRef.update({ status })
+  }
+
+  const doc = await docRef.get()
+  const transaction: any = { id: doc.id, ...doc.data() }
+  const itemData = await itemRef.get()
+  transaction.item = itemData.exists ? { id: itemData.id, ...itemData.data() } : null
+
+  return NextResponse.json(transaction)
 }
 
 export async function PATCH(request: NextRequest) {
-  const supabase = await createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const uid = await verifyTeacher(request)
+  if (!uid) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const body = await request.json()
-  const { data, error } = await supabase
-    .from("transactions")
-    .update({ status: body.status, note: body.note })
-    .eq("id", body.id)
-    .select()
-    .single()
+  const updates: Record<string, any> = { updated_at: new Date().toISOString() }
+  if (body.status) updates.status = body.status
+  if (body.note !== undefined) updates.note = body.note
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data)
+  await adminDb.collection("transactions").doc(body.id).update(updates)
+  const doc = await adminDb.collection("transactions").doc(body.id).get()
+  return NextResponse.json({ id: doc.id, ...doc.data() })
 }
