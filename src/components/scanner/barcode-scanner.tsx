@@ -12,36 +12,57 @@ interface Props {
 export function BarcodeScanner({ onScan, onClose }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const scannerRef = useRef<any>(null)
+  const mountedRef = useRef(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    let scanner: any = null
+    mountedRef.current = true
 
     const initScanner = async () => {
       try {
         const { Html5Qrcode } = await import("html5-qrcode")
+
+        // Check if still mounted after dynamic import
+        if (!mountedRef.current) return
+
         const containerId = "scanner-container"
-        scanner = new Html5Qrcode(containerId)
+        // Make sure DOM element exists
+        if (!document.getElementById(containerId)) return
+
+        const scanner = new Html5Qrcode(containerId)
         scannerRef.current = scanner
 
         await scanner.start(
           { facingMode: "environment" },
           { fps: 10, qrbox: { width: 250, height: 250 } },
           (decodedText: string) => {
-            onScan(decodedText)
+            if (mountedRef.current) onScan(decodedText)
           },
-          () => {} // ignore errors during scanning
+          () => {}
         )
       } catch (err: any) {
-        setError(err?.message || "無法存取相機")
+        if (mountedRef.current) {
+          setError(err?.message || "無法存取相機")
+        }
       }
     }
 
     initScanner()
 
     return () => {
-      if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {})
+      mountedRef.current = false
+      const scanner = scannerRef.current
+      if (scanner) {
+        try {
+          const state = scanner.getState?.()
+          // Only stop if scanner is actually running (state 2 = SCANNING)
+          if (state === 2) {
+            scanner.stop().catch(() => {})
+          }
+        } catch {
+          // Scanner may already be destroyed
+        }
+        scannerRef.current = null
       }
     }
   }, [onScan])
