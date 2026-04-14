@@ -25,9 +25,10 @@ import { Separator } from "@/components/ui/separator"
 import { toast } from "sonner"
 import {
   MapPin, Plus, Save, Trash2, X, Monitor, Package, Search,
-  ChevronDown, Check, Settings, Copy, Printer, List,
+  ChevronDown, Check, Settings, Copy, Printer, List, Sheet,
   DoorOpen, Square, Zap, RectangleHorizontal,
 } from "lucide-react"
+import { SpreadsheetView, type SpreadsheetRow } from "@/components/shared/spreadsheet-view"
 import type {
   Item, Classroom, ClassroomVersion, ClassroomGridCell, FurnitureItem,
 } from "@/types/database"
@@ -366,6 +367,7 @@ export default function ClassroomPage() {
   const [editCols, setEditCols] = useState(20)
   const [showEquipmentList, setShowEquipmentList] = useState(false)
   const [addItemQty, setAddItemQty] = useState(1)
+  const [classroomViewMode, setClassroomViewMode] = useState<"grid" | "spreadsheet">("grid")
 
   const selectedClassroom = classrooms.find(c => c.id === selectedClassroomId)
   const selectedVersion = versions.find(v => v.id === selectedVersionId)
@@ -392,6 +394,53 @@ export default function ClassroomPage() {
     }
     return set
   }, [cells, searchQuery])
+
+  // Build spreadsheet rows from current classroom cells
+  const classroomSpreadsheetRows = useMemo((): SpreadsheetRow[] => {
+    const rows: SpreadsheetRow[] = []
+    for (const cell of cells) {
+      if (cell.type !== "furniture" || !cell.items) continue
+      for (const fi of cell.items) {
+        const item = fi.item
+        rows.push({
+          id: `${selectedClassroomId}-${cell.row}-${cell.col}-${fi.item_id}`,
+          itemId: fi.item_id,
+          name: item?.name || fi.label || "未知物品",
+          category: (item?.category as any)?.name || "-",
+          classroom: selectedClassroom?.name || "-",
+          furniture: cell.label || "未命名家具",
+          furnitureRow: cell.row,
+          furnitureCol: cell.col,
+          classroomId: selectedClassroomId,
+          placedQty: fi.quantity,
+          totalQty: item?.quantity || 0,
+          borrowedQty: 0,
+          availableQty: item?.quantity || 0,
+          unit: item?.unit || "",
+          status: item?.status || "available",
+          barcode: item?.barcode || item?.qr_code || "",
+        })
+      }
+    }
+    return rows
+  }, [cells, selectedClassroomId, selectedClassroom])
+
+  const handleSpreadsheetUpdateQty = useCallback((
+    _classroomId: string, furnitureRow: number, furnitureCol: number,
+    itemId: string, newQty: number
+  ) => {
+    if (newQty <= 0) {
+      // Remove item from furniture
+      setCells(prev => prev.map(c => {
+        if (c.row === furnitureRow && c.col === furnitureCol) {
+          return { ...c, items: (c.items || []).filter(fi => fi.item_id !== itemId) }
+        }
+        return c
+      }))
+    } else {
+      handleUpdateItemQty(furnitureRow, furnitureCol, itemId, newQty)
+    }
+  }, [])
 
   // ---- Data fetching ----
 
@@ -714,6 +763,24 @@ export default function ClassroomPage() {
               </Button>
             </>
           )}
+          <div className="flex border rounded-md">
+            <Button
+              variant={classroomViewMode === "grid" ? "default" : "ghost"}
+              size="icon"
+              onClick={() => setClassroomViewMode("grid")}
+              title="配置圖"
+            >
+              <MapPin className="w-4 h-4" />
+            </Button>
+            <Button
+              variant={classroomViewMode === "spreadsheet" ? "default" : "ghost"}
+              size="icon"
+              onClick={() => setClassroomViewMode("spreadsheet")}
+              title="試算表"
+            >
+              <Sheet className="w-4 h-4" />
+            </Button>
+          </div>
           <Button variant="outline" size="icon" onClick={() => setShowEquipmentList(!showEquipmentList)}>
             <List className="w-4 h-4" />
           </Button>
@@ -750,6 +817,13 @@ export default function ClassroomPage() {
             )}
           </CardContent>
         </Card>
+      ) : classroomViewMode === "spreadsheet" ? (
+        <SpreadsheetView
+          rows={classroomSpreadsheetRows}
+          isTeacher={isTeacher}
+          onUpdatePlacedQty={handleSpreadsheetUpdateQty}
+          searchQuery={searchQuery}
+        />
       ) : (
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div className="flex flex-col lg:flex-row gap-4">

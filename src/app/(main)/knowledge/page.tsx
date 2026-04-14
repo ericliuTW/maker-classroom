@@ -68,12 +68,21 @@ function MindMap({
 }) {
   const [selectedSkill, setSelectedSkill] = useState<string | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const animFrameRef = useRef<number>(0)
+
+  // Zoom & pan state
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const isPanningRef = useRef(false)
+  const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 })
 
   const WIDTH = 1100
   const HEIGHT = 750
   const CX = WIDTH / 2
   const CY = HEIGHT / 2
+  const MIN_ZOOM = 0.3
+  const MAX_ZOOM = 3
 
   // ── Build graph data (stable refs) ──
   type SimNode = MindMapNode & { vx: number; vy: number; fx?: number; fy?: number; radius: number }
@@ -210,9 +219,10 @@ function MindMap({
         node.vy *= damping
         node.x += node.vx
         node.y += node.vy
-        // Boundary
-        node.x = Math.max(node.radius, Math.min(WIDTH - node.radius, node.x))
-        node.y = Math.max(node.radius, Math.min(HEIGHT - node.radius, node.y))
+        // Boundary — keep nodes strictly inside the viewBox
+        const pad = node.radius + 4
+        node.x = Math.max(pad, Math.min(WIDTH - pad, node.x))
+        node.y = Math.max(pad, Math.min(HEIGHT - pad, node.y))
       }
 
       alpha.value *= decay
@@ -259,8 +269,9 @@ function MindMap({
     const node = nodesRef.current.find(n => n.id === dragIdRef.current)
     if (!node) return
     const p = svgPoint(e)
-    node.fx = p.x - dragOffsetRef.current.x
-    node.fy = p.y - dragOffsetRef.current.y
+    const pad = node.radius + 4
+    node.fx = Math.max(pad, Math.min(WIDTH - pad, p.x - dragOffsetRef.current.x))
+    node.fy = Math.max(pad, Math.min(HEIGHT - pad, p.y - dragOffsetRef.current.y))
     node.x = node.fx; node.y = node.fy
     // Reheat simulation
     const map = new Map<string, { x: number; y: number }>()
@@ -294,19 +305,67 @@ function MindMap({
     return isHighlighted(a) && isHighlighted(b)
   }
 
+  // ── Zoom & Pan handlers ──
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault()
+    const delta = e.deltaY > 0 ? 0.9 : 1.1
+    setZoom(z => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z * delta)))
+  }, [])
+
+  const onBgPointerDown = (e: React.MouseEvent) => {
+    // Only pan on middle-click or when clicking background (not nodes)
+    if (e.button === 1 || (e.target === svgRef.current || (e.target as SVGElement).tagName === 'rect')) {
+      isPanningRef.current = true
+      panStartRef.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y }
+    }
+  }
+
+  const onBgPointerMove = (e: React.MouseEvent) => {
+    if (isPanningRef.current) {
+      setPan({
+        x: panStartRef.current.panX + (e.clientX - panStartRef.current.x) / zoom,
+        y: panStartRef.current.panY + (e.clientY - panStartRef.current.y) / zoom,
+      })
+    }
+    onPointerMove(e)
+  }
+
+  const onBgPointerUp = (e: React.MouseEvent) => {
+    isPanningRef.current = false
+    onPointerUp()
+  }
+
   return (
-    <div className="relative w-full border rounded-xl bg-gradient-to-br from-slate-50 to-indigo-50 overflow-hidden">
+    <div ref={containerRef} className="relative w-full border rounded-xl bg-gradient-to-br from-slate-50 to-indigo-50 overflow-hidden">
+      {/* Top-left hint */}
       <div className="absolute top-3 left-3 z-10 text-xs text-muted-foreground bg-white/80 backdrop-blur rounded px-2 py-1">
-        點擊技能篩選 · 拖曳節點調整位置
+        滾輪縮放 · 點擊技能篩選 · 拖曳節點調整位置
+      </div>
+      {/* Zoom controls */}
+      <div className="absolute top-3 right-3 z-10 flex flex-col gap-1">
+        <button
+          className="w-7 h-7 rounded bg-white/90 backdrop-blur border shadow-sm flex items-center justify-center text-sm font-bold hover:bg-white transition-colors"
+          onClick={() => setZoom(z => Math.min(MAX_ZOOM, z * 1.25))}
+        >+</button>
+        <button
+          className="w-7 h-7 rounded bg-white/90 backdrop-blur border shadow-sm flex items-center justify-center text-sm font-bold hover:bg-white transition-colors"
+          onClick={() => setZoom(z => Math.max(MIN_ZOOM, z * 0.8))}
+        >−</button>
+        <button
+          className="w-7 h-7 rounded bg-white/90 backdrop-blur border shadow-sm flex items-center justify-center text-[10px] hover:bg-white transition-colors"
+          onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }}
+        >1:1</button>
       </div>
       <svg
         ref={svgRef}
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        viewBox={`${-pan.x} ${-pan.y} ${WIDTH / zoom} ${HEIGHT / zoom}`}
         className="w-full select-none"
         style={{ height: "clamp(400px, 60vw, 700px)", touchAction: "none" }}
-        onMouseMove={onPointerMove}
-        onMouseUp={onPointerUp}
-        onMouseLeave={onPointerUp}
+        onWheel={handleWheel}
+        onMouseDown={onBgPointerDown}
+        onMouseMove={onBgPointerMove}
+        onMouseUp={onBgPointerUp}
+        onMouseLeave={onBgPointerUp}
         onTouchMove={onPointerMove}
         onTouchEnd={onPointerUp}
       >
@@ -402,7 +461,9 @@ function MindMap({
       </svg>
 
       {/* Legend */}
-      <div className="absolute bottom-3 right-3 flex gap-3 text-xs bg-white/80 backdrop-blur rounded px-3 py-2">
+      <div className="absolute bottom-3 right-3 flex gap-3 text-xs bg-white/80 backdrop-blur rounded px-3 py-2 items-center">
+        <span className="text-muted-foreground">{Math.round(zoom * 100)}%</span>
+        <span className="w-px h-3 bg-gray-300" />
         <span className="flex items-center gap-1">
           <span className="w-3 h-3 rounded-full bg-indigo-500 inline-block" /> 技能
         </span>
