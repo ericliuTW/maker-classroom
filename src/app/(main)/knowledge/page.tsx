@@ -51,6 +51,14 @@ interface MindMapEdge {
   to: string
 }
 
+/** 將長名稱截斷成最多 10 字，拆成 2 行 */
+function truncateLabel(text: string, max = 10): string[] {
+  if (text.length <= max / 2) return [text]
+  const t = text.length > max ? text.slice(0, max - 1) + "…" : text
+  const mid = Math.ceil(t.length / 2)
+  return [t.slice(0, mid), t.slice(mid)]
+}
+
 function MindMap({
   entries,
   onSelectEntry,
@@ -60,67 +68,216 @@ function MindMap({
 }) {
   const [selectedSkill, setSelectedSkill] = useState<string | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
+  const animFrameRef = useRef<number>(0)
 
-  // Build nodes radially
-  const WIDTH = 900
-  const HEIGHT = 600
+  const WIDTH = 1100
+  const HEIGHT = 750
   const CX = WIDTH / 2
   const CY = HEIGHT / 2
 
-  // Unique skills
-  const allSkills = Array.from(
-    new Set(entries.flatMap((e) => e.skills ?? []))
-  )
+  // ── Build graph data (stable refs) ──
+  type SimNode = MindMapNode & { vx: number; vy: number; fx?: number; fy?: number; radius: number }
 
-  const nodes: MindMapNode[] = []
-  const edges: MindMapEdge[] = []
+  const allSkills = Array.from(new Set(entries.flatMap(e => e.skills ?? [])))
 
-  // Root
-  nodes.push({ id: "root", label: "技能地圖", type: "root", x: CX, y: CY })
+  const initNodes = useCallback((): SimNode[] => {
+    const ns: SimNode[] = []
+    ns.push({ id: "root", label: "技能地圖", type: "root", x: CX, y: CY, vx: 0, vy: 0, fx: CX, fy: CY, radius: 42 })
 
-  // Skill nodes — evenly spaced on a circle
-  const skillRadius = 180
-  allSkills.forEach((skill, i) => {
-    const angle = (2 * Math.PI * i) / allSkills.length - Math.PI / 2
-    const x = CX + skillRadius * Math.cos(angle)
-    const y = CY + skillRadius * Math.sin(angle)
-    nodes.push({ id: `skill-${skill}`, label: skill, type: "skill", x, y })
-    edges.push({ from: "root", to: `skill-${skill}` })
-  })
-
-  // Project nodes — placed around each skill node
-  const projectRadius = 100
-  const projectsPlaced = new Set<string>()
-
-  allSkills.forEach((skill, si) => {
-    const skillAngle = (2 * Math.PI * si) / allSkills.length - Math.PI / 2
-    const skillNode = nodes.find((n) => n.id === `skill-${skill}`)!
-    const relatedEntries = entries.filter((e) => e.skills?.includes(skill))
-    const count = relatedEntries.length
-
-    relatedEntries.forEach((entry, pi) => {
-      const projectId = `project-${entry.id}`
-      if (!projectsPlaced.has(projectId)) {
-        // Spread projects outward from skill node
-        const spreadAngle = skillAngle + ((pi - (count - 1) / 2) * Math.PI) / 6
-        const x = skillNode.x + projectRadius * Math.cos(spreadAngle)
-        const y = skillNode.y + projectRadius * Math.sin(spreadAngle)
-        nodes.push({
-          id: projectId,
-          label: entry.title.length > 12 ? entry.title.slice(0, 12) + "…" : entry.title,
-          type: "project",
-          x,
-          y,
-          entry,
-        })
-        projectsPlaced.add(projectId)
-      }
-      edges.push({ from: `skill-${skill}`, to: projectId })
+    const skillR = Math.min(260, 140 + allSkills.length * 8)
+    allSkills.forEach((skill, i) => {
+      const angle = (2 * Math.PI * i) / allSkills.length - Math.PI / 2
+      ns.push({
+        id: `skill-${skill}`, label: skill, type: "skill",
+        x: CX + skillR * Math.cos(angle), y: CY + skillR * Math.sin(angle),
+        vx: 0, vy: 0, radius: 34,
+      })
     })
-  })
 
-  // Helper: find node by id
-  const nodeMap = new Map(nodes.map((n) => [n.id, n]))
+    const placed = new Set<string>()
+    const projR = Math.min(160, 90 + entries.length * 3)
+    allSkills.forEach((skill, si) => {
+      const sAngle = (2 * Math.PI * si) / allSkills.length - Math.PI / 2
+      const sNode = ns.find(n => n.id === `skill-${skill}`)!
+      const related = entries.filter(e => e.skills?.includes(skill))
+      related.forEach((entry, pi) => {
+        const pid = `project-${entry.id}`
+        if (placed.has(pid)) return
+        placed.add(pid)
+        const spread = sAngle + ((pi - (related.length - 1) / 2) * 0.4)
+        ns.push({
+          id: pid, label: entry.title, type: "project",
+          x: sNode.x + projR * Math.cos(spread),
+          y: sNode.y + projR * Math.sin(spread),
+          vx: 0, vy: 0, radius: 38, entry,
+        })
+      })
+    })
+    return ns
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries])
+
+  const edgesRef = useRef<MindMapEdge[]>([])
+  const nodesRef = useRef<SimNode[]>(initNodes())
+  const [positions, setPositions] = useState<Map<string, { x: number; y: number }>>(new Map())
+  const dragIdRef = useRef<string | null>(null)
+  const dragOffsetRef = useRef({ x: 0, y: 0 })
+
+  // Build edges
+  useEffect(() => {
+    const edges: MindMapEdge[] = []
+    allSkills.forEach(skill => {
+      edges.push({ from: "root", to: `skill-${skill}` })
+      entries.filter(e => e.skills?.includes(skill)).forEach(entry => {
+        edges.push({ from: `skill-${skill}`, to: `project-${entry.id}` })
+      })
+    })
+    edgesRef.current = edges
+    nodesRef.current = initNodes()
+  }, [entries, allSkills, initNodes])
+
+  // ── Force simulation with collision ──
+  useEffect(() => {
+    const nodes = nodesRef.current
+    const alpha = { value: 0.8 }
+    const decay = 0.985
+    const minAlpha = 0.005
+    let running = true
+
+    function tick() {
+      if (!running) return
+      if (alpha.value < minAlpha) {
+        // Still listen for drags
+        animFrameRef.current = requestAnimationFrame(tick)
+        return
+      }
+
+      const edges = edgesRef.current
+      const a = alpha.value
+
+      // Spring forces (edges)
+      for (const edge of edges) {
+        const source = nodes.find(n => n.id === edge.from)
+        const target = nodes.find(n => n.id === edge.to)
+        if (!source || !target) continue
+        const idealLen = edge.from === "root" ? 220 : 130
+        const dx = target.x - source.x
+        const dy = target.y - source.y
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1
+        const force = (dist - idealLen) * 0.015 * a
+        const fx = (dx / dist) * force
+        const fy = (dy / dist) * force
+        if (!target.fx) { target.vx -= fx; target.vy -= fy }
+        if (!source.fx) { source.vx += fx; source.vy += fy }
+      }
+
+      // Repulsion (all pairs)
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const a2 = nodes[i], b = nodes[j]
+          const dx = b.x - a2.x
+          const dy = b.y - a2.y
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1
+          const minDist = a2.radius + b.radius + 12
+          if (dist < minDist) {
+            const push = (minDist - dist) * 0.4 * a
+            const px = (dx / dist) * push
+            const py = (dy / dist) * push
+            if (!b.fx) { b.vx += px; b.vy += py }
+            if (!a2.fx) { a2.vx -= px; a2.vy -= py }
+          }
+          // General repulsion
+          const repel = 800 * a / (dist * dist + 100)
+          const rx = (dx / dist) * repel
+          const ry = (dy / dist) * repel
+          if (!b.fx) { b.vx += rx; b.vy += ry }
+          if (!a2.fx) { a2.vx -= rx; a2.vy -= ry }
+        }
+      }
+
+      // Center gravity
+      for (const node of nodes) {
+        if (node.fx != null) continue
+        node.vx += (CX - node.x) * 0.002 * a
+        node.vy += (CY - node.y) * 0.002 * a
+      }
+
+      // Velocity & position update
+      const damping = 0.7
+      for (const node of nodes) {
+        if (node.fx != null) { node.x = node.fx; node.y = node.fy!; continue }
+        node.vx *= damping
+        node.vy *= damping
+        node.x += node.vx
+        node.y += node.vy
+        // Boundary
+        node.x = Math.max(node.radius, Math.min(WIDTH - node.radius, node.x))
+        node.y = Math.max(node.radius, Math.min(HEIGHT - node.radius, node.y))
+      }
+
+      alpha.value *= decay
+
+      // Update React state
+      const map = new Map<string, { x: number; y: number }>()
+      for (const n of nodes) map.set(n.id, { x: n.x, y: n.y })
+      setPositions(map)
+
+      animFrameRef.current = requestAnimationFrame(tick)
+    }
+
+    animFrameRef.current = requestAnimationFrame(tick)
+    return () => { running = false; cancelAnimationFrame(animFrameRef.current) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries])
+
+  // ── Drag handlers ──
+  const svgPoint = (e: React.MouseEvent | React.TouchEvent) => {
+    const svg = svgRef.current
+    if (!svg) return { x: 0, y: 0 }
+    const pt = svg.createSVGPoint()
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY
+    pt.x = clientX; pt.y = clientY
+    const svgP = pt.matrixTransform(svg.getScreenCTM()!.inverse())
+    return { x: svgP.x, y: svgP.y }
+  }
+
+  const onPointerDown = (e: React.MouseEvent | React.TouchEvent, nodeId: string) => {
+    e.stopPropagation()
+    const node = nodesRef.current.find(n => n.id === nodeId)
+    if (!node || node.id === "root") return
+    const p = svgPoint(e)
+    dragIdRef.current = nodeId
+    dragOffsetRef.current = { x: p.x - node.x, y: p.y - node.y }
+    node.fx = node.x
+    node.fy = node.y
+    node.vx = 0; node.vy = 0
+  }
+
+  const onPointerMove = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!dragIdRef.current) return
+    const node = nodesRef.current.find(n => n.id === dragIdRef.current)
+    if (!node) return
+    const p = svgPoint(e)
+    node.fx = p.x - dragOffsetRef.current.x
+    node.fy = p.y - dragOffsetRef.current.y
+    node.x = node.fx; node.y = node.fy
+    // Reheat simulation
+    const map = new Map<string, { x: number; y: number }>()
+    for (const n of nodesRef.current) map.set(n.id, { x: n.x, y: n.y })
+    setPositions(map)
+  }
+
+  const onPointerUp = () => {
+    if (!dragIdRef.current) return
+    const node = nodesRef.current.find(n => n.id === dragIdRef.current)
+    if (node) { delete node.fx; delete node.fy }
+    dragIdRef.current = null
+  }
+
+  // ── Render helpers ──
+  const nodeMap = new Map(nodesRef.current.map(n => [n.id, n]))
+  const getPos = (id: string) => positions.get(id) || { x: nodeMap.get(id)?.x || 0, y: nodeMap.get(id)?.y || 0 }
 
   const isHighlighted = (node: MindMapNode) => {
     if (!selectedSkill) return true
@@ -132,140 +289,125 @@ function MindMap({
 
   const isEdgeHighlighted = (edge: MindMapEdge) => {
     if (!selectedSkill) return true
-    const fromNode = nodeMap.get(edge.from)
-    const toNode = nodeMap.get(edge.to)
-    if (!fromNode || !toNode) return false
-    return isHighlighted(fromNode) && isHighlighted(toNode)
+    const a = nodeMap.get(edge.from), b = nodeMap.get(edge.to)
+    if (!a || !b) return false
+    return isHighlighted(a) && isHighlighted(b)
   }
 
   return (
     <div className="relative w-full border rounded-xl bg-gradient-to-br from-slate-50 to-indigo-50 overflow-hidden">
-      <div className="absolute top-3 left-3 text-xs text-muted-foreground bg-white/80 rounded px-2 py-1">
-        點擊技能節點來篩選相關專案
+      <div className="absolute top-3 left-3 z-10 text-xs text-muted-foreground bg-white/80 backdrop-blur rounded px-2 py-1">
+        點擊技能篩選 · 拖曳節點調整位置
       </div>
       <svg
         ref={svgRef}
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        className="w-full"
-        style={{ height: "clamp(360px, 55vw, 600px)" }}
+        className="w-full select-none"
+        style={{ height: "clamp(400px, 60vw, 700px)", touchAction: "none" }}
+        onMouseMove={onPointerMove}
+        onMouseUp={onPointerUp}
+        onMouseLeave={onPointerUp}
+        onTouchMove={onPointerMove}
+        onTouchEnd={onPointerUp}
       >
         {/* Edges */}
-        {edges.map((edge, i) => {
-          const from = nodeMap.get(edge.from)
-          const to = nodeMap.get(edge.to)
-          if (!from || !to) return null
-          const highlighted = isEdgeHighlighted(edge)
+        {edgesRef.current.map((edge, i) => {
+          const from = getPos(edge.from)
+          const to = getPos(edge.to)
+          const hl = isEdgeHighlighted(edge)
           return (
-            <line
-              key={i}
-              x1={from.x}
-              y1={from.y}
-              x2={to.x}
-              y2={to.y}
-              stroke={highlighted ? (edge.from === "root" ? "#6366f1" : "#94a3b8") : "#e2e8f0"}
-              strokeWidth={edge.from === "root" ? 2 : 1.5}
-              strokeDasharray={edge.from === "root" ? undefined : "4 3"}
-              opacity={highlighted ? 1 : 0.3}
-              className="transition-all duration-200"
+            <line key={i}
+              x1={from.x} y1={from.y} x2={to.x} y2={to.y}
+              stroke={hl ? (edge.from === "root" ? "#6366f1" : "#a5b4fc") : "#e2e8f0"}
+              strokeWidth={edge.from === "root" ? 2 : 1.2}
+              strokeDasharray={edge.from === "root" ? undefined : "5 4"}
+              opacity={hl ? 0.8 : 0.2}
             />
           )
         })}
 
         {/* Nodes */}
-        {nodes.map((node) => {
-          const highlighted = isHighlighted(node)
+        {nodesRef.current.map(node => {
+          const pos = getPos(node.id)
+          const hl = isHighlighted(node)
+
           if (node.type === "root") {
             return (
-              <g key={node.id} transform={`translate(${node.x},${node.y})`}>
-                <circle r={40} fill="#6366f1" className="drop-shadow-md" />
-                <circle r={40} fill="none" stroke="#818cf8" strokeWidth={3} opacity={0.5} />
-                <text
-                  textAnchor="middle"
-                  dy="0.35em"
-                  fill="white"
-                  fontSize={13}
-                  fontWeight="bold"
-                >
-                  {node.label}
-                </text>
+              <g key={node.id} transform={`translate(${pos.x},${pos.y})`}>
+                <circle r={42} fill="#6366f1" />
+                <circle r={42} fill="none" stroke="#818cf8" strokeWidth={3} opacity={0.5} />
+                <text textAnchor="middle" dy="0.35em" fill="white" fontSize={14} fontWeight="bold" className="pointer-events-none select-none">技能地圖</text>
               </g>
             )
           }
 
           if (node.type === "skill") {
-            const isSelected = selectedSkill === node.label
+            const isSel = selectedSkill === node.label
+            const lines = truncateLabel(node.label, 8)
             return (
-              <g
-                key={node.id}
-                transform={`translate(${node.x},${node.y})`}
-                onClick={() => setSelectedSkill(isSelected ? null : node.label)}
-                className="cursor-pointer"
+              <g key={node.id}
+                transform={`translate(${pos.x},${pos.y})`}
+                onMouseDown={e => onPointerDown(e, node.id)}
+                onTouchStart={e => onPointerDown(e, node.id)}
+                onClick={() => { if (!dragIdRef.current) setSelectedSkill(isSel ? null : node.label) }}
+                className="cursor-grab active:cursor-grabbing"
               >
-                <circle
-                  r={32}
-                  fill={isSelected ? "#6366f1" : highlighted ? "#e0e7ff" : "#f1f5f9"}
-                  stroke={isSelected ? "#4f46e5" : highlighted ? "#6366f1" : "#cbd5e1"}
-                  strokeWidth={isSelected ? 2.5 : 1.5}
-                  className="transition-all duration-200"
+                <circle r={34}
+                  fill={isSel ? "#6366f1" : hl ? "#e0e7ff" : "#f1f5f9"}
+                  stroke={isSel ? "#4f46e5" : hl ? "#6366f1" : "#cbd5e1"}
+                  strokeWidth={isSel ? 2.5 : 1.5}
                 />
-                <text
-                  textAnchor="middle"
-                  dy="0.35em"
-                  fill={isSelected ? "white" : highlighted ? "#4338ca" : "#94a3b8"}
-                  fontSize={11}
-                  fontWeight="600"
-                  className="pointer-events-none select-none"
-                >
-                  {node.label.length > 6 ? node.label.slice(0, 6) + "…" : node.label}
-                </text>
+                {lines.map((line, li) => (
+                  <text key={li} textAnchor="middle"
+                    y={lines.length === 1 ? 4 : li * 14 - 3}
+                    fill={isSel ? "white" : hl ? "#4338ca" : "#94a3b8"}
+                    fontSize={11} fontWeight="600"
+                    className="pointer-events-none select-none"
+                  >{line}</text>
+                ))}
               </g>
             )
           }
 
           if (node.type === "project" && node.entry) {
             const entry = node.entry
+            const lines = truncateLabel(node.label, 10)
+            const boxH = lines.length * 14 + 10
             return (
-              <g
-                key={node.id}
-                transform={`translate(${node.x},${node.y})`}
-                onClick={() => highlighted && onSelectEntry(entry)}
-                className={highlighted ? "cursor-pointer" : "cursor-default"}
+              <g key={node.id}
+                transform={`translate(${pos.x},${pos.y})`}
+                onMouseDown={e => onPointerDown(e, node.id)}
+                onTouchStart={e => onPointerDown(e, node.id)}
+                onClick={() => { if (!dragIdRef.current && hl) onSelectEntry(entry) }}
+                className={hl ? "cursor-grab active:cursor-grabbing" : "cursor-default"}
               >
-                <rect
-                  x={-38}
-                  y={-14}
-                  width={76}
-                  height={28}
-                  rx={6}
-                  fill={highlighted ? "white" : "#f8fafc"}
-                  stroke={highlighted ? "#94a3b8" : "#e2e8f0"}
+                <rect x={-44} y={-boxH / 2} width={88} height={boxH} rx={7}
+                  fill={hl ? "white" : "#f8fafc"}
+                  stroke={hl ? "#818cf8" : "#e2e8f0"}
                   strokeWidth={1.5}
-                  className="transition-all duration-200 drop-shadow-sm"
                 />
-                <text
-                  textAnchor="middle"
-                  dy="0.35em"
-                  fill={highlighted ? "#334155" : "#cbd5e1"}
-                  fontSize={9.5}
-                  className="pointer-events-none select-none"
-                >
-                  {node.label}
-                </text>
+                {lines.map((line, li) => (
+                  <text key={li} textAnchor="middle"
+                    y={lines.length === 1 ? 4 : li * 14 - (lines.length - 1) * 7 + 4}
+                    fill={hl ? "#334155" : "#cbd5e1"}
+                    fontSize={10}
+                    className="pointer-events-none select-none"
+                  >{line}</text>
+                ))}
               </g>
             )
           }
-
           return null
         })}
       </svg>
 
       {/* Legend */}
-      <div className="absolute bottom-3 right-3 flex gap-3 text-xs bg-white/80 rounded px-3 py-2">
+      <div className="absolute bottom-3 right-3 flex gap-3 text-xs bg-white/80 backdrop-blur rounded px-3 py-2">
         <span className="flex items-center gap-1">
           <span className="w-3 h-3 rounded-full bg-indigo-500 inline-block" /> 技能
         </span>
         <span className="flex items-center gap-1">
-          <span className="w-3 h-3 rounded bg-white border border-slate-300 inline-block" /> 專案
+          <span className="w-3 h-3 rounded bg-white border border-indigo-300 inline-block" /> 專案
         </span>
       </div>
     </div>
