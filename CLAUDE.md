@@ -32,15 +32,12 @@ maker-classroom/
 - Firebase (Firestore + Auth)
 - Zustand (狀態管理)
 - html5-qrcode (條碼/QR掃描)
-- Canvas API (教室配置圖)
+- @dnd-kit/core (教室配置圖拖放)
 - Vercel (部署)
 
 ## 身份系統
 - 教師：Firebase Auth (email/password)
 - 學生：使用碼（無個資、session-based）
-
-## Firestore Collections
-categories, items, item_locations, classroom_config, access_codes, transactions, projects, knowledge_base, bookings
 
 ## 部署
 - Vercel: https://maker-classroom.vercel.app
@@ -58,6 +55,10 @@ npx tsx scripts/seed.ts  # 寫入種子資料
 - FIREBASE_SERVICE_ACCOUNT_KEY (JSON string)
 - AI_API_KEY, AI_BASE_URL, AI_MODEL
 
+## Firestore Collections
+categories, items, item_locations, classroom_config (legacy), classrooms, classrooms/{id}/versions, access_codes, transactions, projects, knowledge_base, bookings
+
 ## CHANGELOG
 - 2026-04-13：初始建立 — 全部七大模組 + Auth + 使用碼系統
 - 2026-04-13：從 Supabase 遷移到 Firebase (Firestore + Auth)，部署至 Vercel
+- 2026-04-13：教室配置重構 — 支援多教室+多版本，UI 從 Canvas 改為 @dnd-kit + CSS Grid

@@ -40,6 +40,39 @@ export interface ItemLocation {
   item?: Item
 }
 
+// --- Classroom Grid System (multi-classroom + versions) ---
+export type ClassroomCellType = 'item' | 'furniture' | 'empty'
+
+export interface ClassroomGridCell {
+  row: number
+  col: number
+  type: ClassroomCellType
+  item_id?: string    // for 'item' type
+  quantity?: number   // for 'item' type
+  label?: string      // for 'furniture' type or custom label
+  // joined (client-side only)
+  item?: Item
+}
+
+export interface Classroom {
+  id: string
+  name: string
+  rows: number
+  cols: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ClassroomVersion {
+  id: string
+  classroom_id: string
+  name: string
+  cells: ClassroomGridCell[]
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
 export interface Transaction {
   id: string
   item_id: string
@@ -121,6 +154,7 @@ export interface Booking {
   project?: Project
 }
 
+// Legacy — kept for backward compat with seed.ts
 export interface ClassroomConfig {
   id: string
   name: string
