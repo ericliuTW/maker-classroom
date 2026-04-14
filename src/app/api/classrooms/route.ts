@@ -2,10 +2,24 @@ import { NextRequest, NextResponse } from "next/server"
 import { adminDb } from "@/lib/firebase-admin"
 import { verifyTeacher } from "@/lib/auth-helper"
 
+function serializeDoc(doc: FirebaseFirestore.DocumentSnapshot) {
+  const data = doc.data()!
+  const result: any = { id: doc.id }
+  for (const [key, val] of Object.entries(data)) {
+    // Convert Firestore Timestamps to ISO strings
+    if (val && typeof val === "object" && typeof val.toDate === "function") {
+      result[key] = val.toDate().toISOString()
+    } else {
+      result[key] = val
+    }
+  }
+  return result
+}
+
 // GET /api/classrooms — list all classrooms
 export async function GET() {
   const snapshot = await adminDb.collection("classrooms").orderBy("created_at", "asc").get()
-  const classrooms = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+  const classrooms = snapshot.docs.map(serializeDoc)
   return NextResponse.json(classrooms)
 }
 
@@ -19,8 +33,8 @@ export async function POST(request: NextRequest) {
 
   const docRef = await adminDb.collection("classrooms").add({
     name: name || "新教室",
-    rows: rows || 8,
-    cols: cols || 10,
+    rows: rows || 16,
+    cols: cols || 20,
     created_at: now,
     updated_at: now,
   })
@@ -36,5 +50,5 @@ export async function POST(request: NextRequest) {
   })
 
   const doc = await docRef.get()
-  return NextResponse.json({ id: doc.id, ...doc.data() })
+  return NextResponse.json(serializeDoc(doc))
 }

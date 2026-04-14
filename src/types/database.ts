@@ -41,17 +41,28 @@ export interface ItemLocation {
 }
 
 // --- Classroom Grid System (multi-classroom + versions) ---
-export type ClassroomCellType = 'item' | 'furniture' | 'empty'
+export type ClassroomCellType = 'furniture' | 'empty'
+
+/** 家具內的物品 */
+export interface FurnitureItem {
+  item_id: string
+  quantity: number
+  label?: string
+  // joined (client-side only)
+  item?: Item
+}
 
 export interface ClassroomGridCell {
   row: number
   col: number
   type: ClassroomCellType
-  item_id?: string    // for 'item' type
-  quantity?: number   // for 'item' type
-  label?: string      // for 'furniture' type or custom label
-  // joined (client-side only)
-  item?: Item
+  // furniture properties
+  label?: string
+  furnitureType?: string  // 'workbench', 'shelf', 'blackboard', 'door', 'window', etc.
+  width?: number          // grid column span (default 1)
+  height?: number         // grid row span (default 1)
+  // items stored inside this furniture
+  items?: FurnitureItem[]
 }
 
 export interface Classroom {
@@ -137,13 +148,29 @@ export interface KnowledgeEntry {
   difficulty: 'beginner' | 'intermediate' | 'advanced'
   image_url: string | null
   created_at: string
+  // new fields for skills & project details
+  skills?: string[]         // 技能標籤，e.g. ["焊接", "程式設計", "3D建模"]
+  objectives?: string       // 專案目標
+  content?: string          // 專案內容
+  process_steps?: ProcessStep[] // 製作步驟
+}
+
+export interface ProcessStep {
+  step: number
+  title: string
+  description: string
+  safety_note?: string      // 安全注意事項
+  materials?: string[]
+  equipment?: string[]
 }
 
 export interface Booking {
   id: string
   project_id: string | null
+  project_plan_id?: string | null
   title: string
   equipment_items: string[]
+  material_items?: string[]  // pick up materials
   start_time: string
   end_time: string
   status: BookingStatus
@@ -152,6 +179,22 @@ export interface Booking {
   created_at: string
   // joined
   project?: Project
+}
+
+/** 專案規劃區 */
+export interface ProjectPlan {
+  id: string
+  title: string
+  description: string
+  source_knowledge_id?: string  // 從知識庫匯入的來源
+  objectives?: string
+  process_steps?: ProcessStep[]
+  materials: MaterialItem[]
+  equipment: EquipmentItem[]
+  status: 'draft' | 'planning' | 'in_progress' | 'completed'
+  session_token: string | null
+  created_at: string
+  updated_at: string
 }
 
 // Legacy — kept for backward compat with seed.ts

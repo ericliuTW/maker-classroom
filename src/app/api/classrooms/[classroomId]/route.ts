@@ -33,7 +33,6 @@ export async function DELETE(
 
   const { classroomId } = await params
 
-  // Delete all versions first
   const versionsSnap = await adminDb
     .collection("classrooms").doc(classroomId)
     .collection("versions").get()
@@ -41,8 +40,6 @@ export async function DELETE(
     await doc.ref.delete()
   }
 
-  // Delete classroom
   await adminDb.collection("classrooms").doc(classroomId).delete()
-
   return NextResponse.json({ success: true })
 }

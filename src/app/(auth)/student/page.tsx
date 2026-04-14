@@ -50,7 +50,7 @@ export default function StudentEntryPage() {
               onChange={(e) => setCode(e.target.value.toUpperCase())}
               placeholder="輸入使用碼"
               className="text-center text-2xl tracking-widest"
-              maxLength={8}
+              maxLength={20}
               required
             />
             <Button type="submit" className="w-full" disabled={loading || code.length < 4}>

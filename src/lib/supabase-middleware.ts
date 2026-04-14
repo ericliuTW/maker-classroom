@@ -14,7 +14,7 @@ export async function updateSession(request: NextRequest) {
   const studentSession = request.cookies.get("student_session")
 
   // Student-accessible paths
-  const studentPaths = ["/inventory", "/ai-designer", "/knowledge", "/bookings", "/classroom", "/scanner"]
+  const studentPaths = ["/inventory", "/ai-designer", "/knowledge", "/bookings", "/classroom", "/scanner", "/project-planner"]
   if (studentPaths.some((p) => path.startsWith(p))) {
     if (!teacherToken && !studentSession) {
       return NextResponse.redirect(new URL("/student", request.url))

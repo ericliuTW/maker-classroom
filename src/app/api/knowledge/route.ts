@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json()
   const docRef = await adminDb.collection("knowledge_base").add({
     title: body.title,
-    url: body.url,
+    url: body.url || "",
     source: body.source || "manual",
     description: body.description,
     tags: body.tags || [],
@@ -47,6 +47,11 @@ export async function POST(request: NextRequest) {
     required_equipment: body.required_equipment || [],
     difficulty: body.difficulty || "beginner",
     image_url: body.image_url || null,
+    // New fields
+    skills: body.skills || [],
+    objectives: body.objectives || "",
+    content: body.content || "",
+    process_steps: body.process_steps || [],
     created_at: new Date().toISOString(),
   })
 

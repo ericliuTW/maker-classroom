@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import {
   DndContext,
   DragOverlay,
@@ -16,103 +16,110 @@ import {
 import { useAuthStore } from "@/stores/auth-store"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Separator } from "@/components/ui/separator"
 import { toast } from "sonner"
 import {
-  MapPin, Plus, Save, Trash2, X, Monitor, Package,
-  ChevronDown, Check, Settings, Copy,
+  MapPin, Plus, Save, Trash2, X, Monitor, Package, Search,
+  ChevronDown, Check, Settings, Copy, Printer, List,
+  DoorOpen, Square, Zap, RectangleHorizontal,
 } from "lucide-react"
 import type {
-  Item, Classroom, ClassroomVersion, ClassroomGridCell, ClassroomCellType,
+  Item, Classroom, ClassroomVersion, ClassroomGridCell, FurnitureItem,
 } from "@/types/database"
 
 // ============================================================
 // Constants
 // ============================================================
 
-const CELL_SIZE = 80
-const CELL_GAP = 3
+const CELL_SIZE = 40
+const CELL_GAP = 1
 
-const FURNITURE_PRESETS = [
-  "電腦桌", "工作台", "3D印表機", "雷切機", "置物架",
-  "垃圾桶", "門", "窗戶", "白板", "講台", "水槽",
+const FURNITURE_PRESETS: { label: string; icon: string; defaultW: number; defaultH: number }[] = [
+  { label: "工作台", icon: "🔧", defaultW: 3, defaultH: 2 },
+  { label: "電腦桌", icon: "🖥️", defaultW: 2, defaultH: 1 },
+  { label: "置物架", icon: "📦", defaultW: 2, defaultH: 1 },
+  { label: "材料架", icon: "🗄️", defaultW: 2, defaultH: 1 },
+  { label: "黑板", icon: "📝", defaultW: 4, defaultH: 1 },
+  { label: "白板", icon: "⬜", defaultW: 4, defaultH: 1 },
+  { label: "門", icon: "🚪", defaultW: 2, defaultH: 1 },
+  { label: "窗戶", icon: "🪟", defaultW: 3, defaultH: 1 },
+  { label: "講台", icon: "🎤", defaultW: 3, defaultH: 2 },
+  { label: "水槽", icon: "🚰", defaultW: 2, defaultH: 1 },
+  { label: "3D印表機", icon: "🖨️", defaultW: 2, defaultH: 2 },
+  { label: "雷切機", icon: "⚡", defaultW: 3, defaultH: 2 },
+  { label: "鑽床", icon: "🔩", defaultW: 2, defaultH: 2 },
+  { label: "砂輪機", icon: "⚙️", defaultW: 1, defaultH: 1 },
+  { label: "線鋸機", icon: "🪚", defaultW: 2, defaultH: 2 },
+  { label: "CNC雕刻機", icon: "🛠️", defaultW: 3, defaultH: 2 },
+  { label: "緊急開關", icon: "🔴", defaultW: 1, defaultH: 1 },
+  { label: "電箱", icon: "⚡", defaultW: 1, defaultH: 2 },
+  { label: "滅火器", icon: "🧯", defaultW: 1, defaultH: 1 },
+  { label: "急救箱", icon: "🩹", defaultW: 1, defaultH: 1 },
+  { label: "垃圾桶", icon: "🗑️", defaultW: 1, defaultH: 1 },
 ]
 
-// ============================================================
-// DraggableItem — sidebar item to drag onto grid
-// ============================================================
-
-function DraggableItem({ item }: { item: Item }) {
-  const dragId = `sidebar-item-${item.id}`
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: dragId,
-    data: { type: "sidebar-item", item },
-  })
-
-  return (
-    <div
-      ref={setNodeRef}
-      {...attributes}
-      {...listeners}
-      className={`flex items-center gap-2 px-3 py-2 rounded-lg bg-background border text-sm cursor-grab active:cursor-grabbing select-none hover:shadow-sm ${
-        isDragging ? "opacity-30" : ""
-      }`}
-    >
-      <Package className="w-4 h-4 text-indigo-500 shrink-0" />
-      <span className="truncate">{item.name}</span>
-      <span className="text-muted-foreground text-xs ml-auto shrink-0">
-        {item.quantity} {item.unit}
-      </span>
-    </div>
-  )
+function getFurnitureColor(label: string): string {
+  if (["門", "窗戶"].includes(label)) return "bg-amber-100 border-amber-300"
+  if (["緊急開關", "電箱", "滅火器"].includes(label)) return "bg-red-50 border-red-300"
+  if (["急救箱"].includes(label)) return "bg-green-50 border-green-300"
+  if (["黑板", "白板", "講台"].includes(label)) return "bg-slate-100 border-slate-300"
+  if (["3D印表機", "雷切機", "鑽床", "砂輪機", "線鋸機", "CNC雕刻機"].includes(label)) return "bg-blue-50 border-blue-300"
+  if (["工作台", "電腦桌"].includes(label)) return "bg-orange-50 border-orange-300"
+  return "bg-gray-100 border-gray-300"
 }
 
 // ============================================================
-// DraggableCellContent — item/furniture already on grid (can be moved)
+// Helpers: occupied cells calculation
 // ============================================================
 
-function DraggableCellContent({ cell }: { cell: ClassroomGridCell }) {
-  const dragId = `cell-content-${cell.row}-${cell.col}`
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: dragId,
-    data: { type: "cell-content", cell },
-  })
-
-  if (cell.type === "furniture") {
-    return (
-      <div
-        ref={setNodeRef}
-        {...attributes}
-        {...listeners}
-        className={`flex flex-col items-center justify-center w-full h-full cursor-grab active:cursor-grabbing select-none ${
-          isDragging ? "opacity-30" : ""
-        }`}
-      >
-        <Monitor className="w-5 h-5 text-gray-400" />
-        <span className="text-[10px] font-medium text-gray-600 text-center leading-tight px-1 truncate max-w-full mt-0.5">
-          {cell.label || "家具"}
-        </span>
-      </div>
-    )
+function getOccupiedCells(cells: ClassroomGridCell[]): Set<string> {
+  const occupied = new Set<string>()
+  for (const c of cells) {
+    if (c.type !== "furniture") continue
+    const w = c.width || 1
+    const h = c.height || 1
+    for (let r = 0; r < h; r++) {
+      for (let cl = 0; cl < w; cl++) {
+        occupied.add(`${c.row + r}-${c.col + cl}`)
+      }
+    }
   }
+  return occupied
+}
 
-  // item type
+function canPlace(cells: ClassroomGridCell[], row: number, col: number, w: number, h: number, rows: number, cols: number, excludeCell?: ClassroomGridCell): boolean {
+  if (row + h > rows || col + w > cols) return false
+  const occupied = getOccupiedCells(excludeCell ? cells.filter(c => c !== excludeCell) : cells)
+  for (let r = 0; r < h; r++) {
+    for (let c = 0; c < w; c++) {
+      if (occupied.has(`${row + r}-${col + c}`)) return false
+    }
+  }
+  return true
+}
+
+// ============================================================
+// DraggableItem — sidebar item to drag onto furniture
+// ============================================================
+
+function DraggableItem({ item }: { item: Item }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `sidebar-item-${item.id}`,
+    data: { type: "sidebar-item", item },
+  })
   return (
     <div
-      ref={setNodeRef}
-      {...attributes}
-      {...listeners}
-      className={`flex flex-col items-center justify-center w-full h-full cursor-grab active:cursor-grabbing select-none ${
-        isDragging ? "opacity-30" : ""
-      }`}
+      ref={setNodeRef} {...attributes} {...listeners}
+      className={`flex items-center gap-2 px-2 py-1.5 rounded border text-xs cursor-grab active:cursor-grabbing select-none hover:shadow-sm ${isDragging ? "opacity-30" : ""}`}
     >
-      <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-white text-xs font-bold">
-        {cell.quantity || 1}
-      </div>
-      <span className="text-[10px] font-medium text-foreground text-center leading-tight px-1 truncate max-w-full mt-0.5">
-        {cell.item?.name || cell.label || "物品"}
-      </span>
+      <Package className="w-3 h-3 text-indigo-500 shrink-0" />
+      <span className="truncate flex-1">{item.name}</span>
+      <span className="text-muted-foreground shrink-0">{item.quantity}{item.unit}</span>
     </div>
   )
 }
@@ -122,76 +129,80 @@ function DraggableCellContent({ cell }: { cell: ClassroomGridCell }) {
 // ============================================================
 
 function DroppableCell({
-  cell,
-  isTeacher,
-  onRemove,
+  row, col, highlighted,
 }: {
-  cell: ClassroomGridCell
-  isTeacher: boolean
-  onRemove: (row: number, col: number) => void
+  row: number; col: number; highlighted: boolean
 }) {
-  const cellId = `cell-${cell.row}-${cell.col}`
+  const cellId = `cell-${row}-${col}`
   const { setNodeRef, isOver } = useDroppable({
     id: cellId,
-    data: { row: cell.row, col: cell.col, cell },
+    data: { row, col },
   })
+  return (
+    <div
+      ref={setNodeRef}
+      className={`w-full h-full rounded-sm transition-colors
+        ${isOver ? "bg-primary/20 ring-1 ring-primary" : ""}
+        ${highlighted ? "bg-yellow-200 ring-2 ring-yellow-400" : ""}
+      `}
+      style={{ gridRow: row + 1, gridColumn: col + 1 }}
+    />
+  )
+}
 
-  if (cell.type === "empty") {
-    return (
-      <div
-        ref={setNodeRef}
-        className={`
-          relative w-full h-full rounded-lg border border-dashed border-border/50
-          flex items-center justify-center
-          hover:border-primary/30 hover:bg-primary/5 transition-colors
-          ${isOver ? "ring-2 ring-primary border-primary bg-primary/10" : ""}
-        `}
-      />
-    )
-  }
+// ============================================================
+// FurnitureBlock — rendered furniture spanning multiple cells
+// ============================================================
+
+function FurnitureBlock({
+  cell, isTeacher, highlighted, onRemove, onClick,
+}: {
+  cell: ClassroomGridCell; isTeacher: boolean; highlighted: boolean
+  onRemove: () => void; onClick: () => void
+}) {
+  const w = cell.width || 1
+  const h = cell.height || 1
+  const itemCount = cell.items?.length || 0
+  const colorClass = getFurnitureColor(cell.label || "")
+  const cellId = `furniture-${cell.row}-${cell.col}`
+  const { setNodeRef, isOver } = useDroppable({
+    id: cellId,
+    data: { row: cell.row, col: cell.col, furniture: cell },
+  })
 
   return (
     <div
       ref={setNodeRef}
+      onClick={onClick}
       className={`
-        group relative w-full h-full rounded-lg border shadow-sm
-        flex items-center justify-center transition-all overflow-hidden
-        ${cell.type === "furniture"
-          ? "border-dashed border-gray-300 bg-gray-50"
-          : "border-indigo-200 bg-background hover:shadow-md"
-        }
-        ${isOver ? "ring-2 ring-primary border-primary" : ""}
+        group relative rounded border-2 cursor-pointer
+        flex flex-col items-center justify-center overflow-hidden
+        transition-all hover:shadow-md select-none
+        ${colorClass}
+        ${highlighted ? "ring-2 ring-yellow-400 shadow-lg shadow-yellow-200" : ""}
+        ${isOver ? "ring-2 ring-primary shadow-lg" : ""}
       `}
+      style={{
+        gridRow: `${cell.row + 1} / span ${h}`,
+        gridColumn: `${cell.col + 1} / span ${w}`,
+        zIndex: 2,
+      }}
     >
       {isTeacher && (
         <button
-          onClick={() => onRemove(cell.row, cell.col)}
-          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive/10 text-destructive flex items-center justify-center hover:bg-destructive/20 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={e => { e.stopPropagation(); onRemove() }}
+          className="absolute top-0 right-0 w-4 h-4 rounded-bl bg-destructive/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"
         >
           <X className="w-3 h-3" />
         </button>
       )}
-      {isTeacher ? (
-        <DraggableCellContent cell={cell} />
-      ) : (
-        // Read-only for students
-        cell.type === "furniture" ? (
-          <div className="flex flex-col items-center justify-center">
-            <Monitor className="w-5 h-5 text-gray-400" />
-            <span className="text-[10px] font-medium text-gray-600 text-center leading-tight px-1 truncate max-w-full mt-0.5">
-              {cell.label || "家具"}
-            </span>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center">
-            <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-white text-xs font-bold">
-              {cell.quantity || 1}
-            </div>
-            <span className="text-[10px] font-medium text-foreground text-center leading-tight px-1 truncate max-w-full mt-0.5">
-              {cell.item?.name || cell.label || "物品"}
-            </span>
-          </div>
-        )
+      <span className="text-[10px] font-medium text-center leading-tight px-0.5 truncate max-w-full">
+        {cell.label || "家具"}
+      </span>
+      {itemCount > 0 && (
+        <Badge variant="secondary" className="text-[8px] h-4 px-1 mt-0.5">
+          {itemCount} 項器材
+        </Badge>
       )}
     </div>
   )
@@ -202,34 +213,125 @@ function DroppableCell({
 // ============================================================
 
 function DragOverlayContent({ data }: { data: any }) {
-  if (data?.type === "sidebar-item") {
+  if (!data) return null
+  if (data.type === "sidebar-item") {
     return (
-      <div className="w-16 h-16 rounded-xl bg-background border-2 border-primary shadow-xl flex flex-col items-center justify-center pointer-events-none">
-        <Package className="w-5 h-5 text-indigo-500" />
-        <p className="text-[9px] font-medium text-foreground truncate max-w-[56px]">
-          {data.item?.name}
-        </p>
-      </div>
-    )
-  }
-  if (data?.type === "cell-content") {
-    const cell = data.cell as ClassroomGridCell
-    return (
-      <div className="w-16 h-16 rounded-xl bg-background border-2 border-primary shadow-xl flex flex-col items-center justify-center pointer-events-none">
-        {cell.type === "furniture" ? (
-          <Monitor className="w-5 h-5 text-gray-400" />
-        ) : (
-          <div className="w-6 h-6 rounded-full bg-indigo-500 flex items-center justify-center text-white text-[10px] font-bold">
-            {cell.quantity || 1}
-          </div>
-        )}
-        <p className="text-[9px] font-medium truncate max-w-[56px]">
-          {cell.type === "furniture" ? (cell.label || "家具") : (cell.item?.name || cell.label || "")}
-        </p>
+      <div className="px-3 py-2 rounded-lg bg-background border-2 border-primary shadow-xl text-xs font-medium pointer-events-none">
+        <Package className="w-4 h-4 text-indigo-500 inline mr-1" />
+        {data.item?.name}
       </div>
     )
   }
   return null
+}
+
+// ============================================================
+// Equipment List Panel
+// ============================================================
+
+function EquipmentListPanel({ cells, searchQuery }: { cells: ClassroomGridCell[]; searchQuery: string }) {
+  const allItems: { furniture: string; item: FurnitureItem; row: number; col: number }[] = []
+  for (const cell of cells) {
+    if (cell.type !== "furniture" || !cell.items) continue
+    for (const item of cell.items) {
+      allItems.push({ furniture: cell.label || "未命名", item, row: cell.row, col: cell.col })
+    }
+  }
+
+  const filtered = searchQuery
+    ? allItems.filter(i =>
+        i.item.label?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        i.item.item?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        i.furniture.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : allItems
+
+  return (
+    <div className="space-y-1 max-h-[40vh] overflow-y-auto">
+      {filtered.length === 0 ? (
+        <p className="text-xs text-muted-foreground text-center py-4">
+          {searchQuery ? "未找到符合的器材" : "尚無器材擺放"}
+        </p>
+      ) : (
+        filtered.map((entry, i) => (
+          <div key={i} className="flex items-center gap-2 text-xs border rounded px-2 py-1.5">
+            <div className="w-5 h-5 rounded bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-[9px] shrink-0">
+              {entry.item.quantity}
+            </div>
+            <span className="truncate flex-1">{entry.item.item?.name || entry.item.label || "物品"}</span>
+            <span className="text-muted-foreground shrink-0">📍 {entry.furniture}</span>
+          </div>
+        ))
+      )}
+      {!searchQuery && (
+        <p className="text-[10px] text-muted-foreground mt-1">共 {allItems.length} 項器材</p>
+      )}
+    </div>
+  )
+}
+
+// ============================================================
+// Export to printable HTML
+// ============================================================
+
+function exportClassroomHTML(classroom: Classroom, version: ClassroomVersion, cells: ClassroomGridCell[]) {
+  const cellPx = 36
+  const gap = 1
+  const furnitureCells = cells.filter(c => c.type === "furniture")
+
+  // Build equipment list
+  const equipmentList: { furniture: string; name: string; qty: number }[] = []
+  for (const cell of furnitureCells) {
+    for (const item of cell.items || []) {
+      equipmentList.push({
+        furniture: cell.label || "未命名",
+        name: item.item?.name || item.label || "物品",
+        qty: item.quantity,
+      })
+    }
+  }
+
+  const gridHTML = furnitureCells.map(c => {
+    const w = c.width || 1
+    const h = c.height || 1
+    const colorClass = getFurnitureColor(c.label || "")
+    const itemCount = c.items?.length || 0
+    return `<div style="grid-row:${c.row+1}/span ${h};grid-column:${c.col+1}/span ${w};
+      border:2px solid #ccc;border-radius:4px;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;font-size:11px;padding:2px;
+      background:${c.label && ["門","窗戶"].includes(c.label) ? "#fef3c7" : c.label && ["緊急開關","電箱","滅火器"].includes(c.label) ? "#fef2f2" : "#f3f4f6"}">
+      <b>${c.label || "家具"}</b>
+      ${itemCount > 0 ? `<span style="font-size:9px;color:#666">${itemCount}項</span>` : ""}
+    </div>`
+  }).join("\n")
+
+  const eqRows = equipmentList.map(e =>
+    `<tr><td style="padding:4px 8px;border:1px solid #ddd">${e.name}</td>
+     <td style="padding:4px 8px;border:1px solid #ddd;text-align:center">${e.qty}</td>
+     <td style="padding:4px 8px;border:1px solid #ddd">${e.furniture}</td></tr>`
+  ).join("\n")
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>${classroom.name} — ${version.name}</title>
+<style>@media print{.no-print{display:none!important}body{margin:0}}
+body{font-family:sans-serif;padding:20px}
+.grid{display:grid;grid-template-columns:repeat(${classroom.cols},${cellPx}px);
+grid-template-rows:repeat(${classroom.rows},${cellPx}px);gap:${gap}px;
+background:#e5e7eb;border:2px solid #9ca3af;border-radius:4px;padding:${gap}px;margin:16px 0}
+table{border-collapse:collapse;width:100%;margin-top:16px}
+th{background:#f3f4f6;padding:6px 8px;border:1px solid #ddd;text-align:left;font-size:12px}
+td{font-size:12px}</style></head><body>
+<h1 style="margin:0">${classroom.name}</h1>
+<p style="color:#666;margin:4px 0">版本：${version.name} ｜ 列印日期：${new Date().toLocaleDateString("zh-TW")}</p>
+<div class="grid">${gridHTML}</div>
+<h2>器材清單</h2>
+${equipmentList.length > 0 ? `<table><thead><tr><th>器材名稱</th><th>數量</th><th>擺放位置</th></tr></thead><tbody>${eqRows}</tbody></table>` : "<p>無器材擺放</p>"}
+<button class="no-print" onclick="window.print()" style="margin-top:16px;padding:8px 24px;font-size:14px;cursor:pointer">列印</button>
+</body></html>`
+
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" })
+  const url = URL.createObjectURL(blob)
+  window.open(url, "_blank")
 }
 
 // ============================================================
@@ -241,36 +343,58 @@ export default function ClassroomPage() {
 
   // Data
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
-  const [selectedClassroomId, setSelectedClassroomId] = useState<string>("")
+  const [selectedClassroomId, setSelectedClassroomId] = useState("")
   const [versions, setVersions] = useState<ClassroomVersion[]>([])
-  const [selectedVersionId, setSelectedVersionId] = useState<string>("")
+  const [selectedVersionId, setSelectedVersionId] = useState("")
   const [cells, setCells] = useState<ClassroomGridCell[]>([])
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
 
   // UI state
   const [dragData, setDragData] = useState<any>(null)
-  const [placementMode, setPlacementMode] = useState<"item" | "furniture">("item")
-  const [furnitureLabel, setFurnitureLabel] = useState("")
+  const [searchQuery, setSearchQuery] = useState("")
+  const [selectedFurniture, setSelectedFurniture] = useState<ClassroomGridCell | null>(null)
+  const [furnitureDialogOpen, setFurnitureDialogOpen] = useState(false)
+  const [showAddFurniture, setShowAddFurniture] = useState(false)
+  const [customLabel, setCustomLabel] = useState("")
+  const [customW, setCustomW] = useState(2)
+  const [customH, setCustomH] = useState(1)
   const [versionName, setVersionName] = useState("")
   const [showSettings, setShowSettings] = useState(false)
   const [editName, setEditName] = useState("")
-  const [editRows, setEditRows] = useState(8)
-  const [editCols, setEditCols] = useState(10)
+  const [editRows, setEditRows] = useState(16)
+  const [editCols, setEditCols] = useState(20)
+  const [showEquipmentList, setShowEquipmentList] = useState(false)
+  const [addItemQty, setAddItemQty] = useState(1)
 
   const selectedClassroom = classrooms.find(c => c.id === selectedClassroomId)
   const selectedVersion = versions.find(v => v.id === selectedVersionId)
-  const rows = selectedClassroom?.rows || 8
-  const cols = selectedClassroom?.cols || 10
+  const rows = selectedClassroom?.rows || 16
+  const cols = selectedClassroom?.cols || 20
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } })
   )
 
+  // Highlighted furniture from search
+  const highlightedCells = useMemo(() => {
+    if (!searchQuery.trim()) return new Set<string>()
+    const q = searchQuery.toLowerCase()
+    const set = new Set<string>()
+    for (const cell of cells) {
+      if (cell.type !== "furniture" || !cell.items) continue
+      const match = cell.items.some(item =>
+        item.label?.toLowerCase().includes(q) ||
+        item.item?.name?.toLowerCase().includes(q)
+      )
+      if (match) set.add(`${cell.row}-${cell.col}`)
+    }
+    return set
+  }, [cells, searchQuery])
+
   // ---- Data fetching ----
 
-  // Load classrooms + items
   useEffect(() => {
     Promise.all([
       fetch("/api/classrooms").then(r => r.json()),
@@ -285,56 +409,60 @@ export default function ClassroomPage() {
     })
   }, [])
 
-  // Load versions when classroom changes
   useEffect(() => {
     if (!selectedClassroomId) return
     fetch(`/api/classrooms/${selectedClassroomId}/versions`)
       .then(r => r.json())
-      .then(async (vers) => {
+      .then((vers) => {
         if (!Array.isArray(vers)) return
         setVersions(vers)
-        // Auto-select active version, or first
         const active = vers.find((v: ClassroomVersion) => v.is_active) || vers[0]
         if (active) {
           setSelectedVersionId(active.id)
-          await loadVersionCells(active)
+          loadVersionCells(active)
         }
       })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedClassroomId])
 
-  // Join item data to cells
-  const loadVersionCells = useCallback(async (version: ClassroomVersion) => {
+  const loadVersionCells = useCallback((version: ClassroomVersion) => {
     const joinedCells = (version.cells || []).map(c => {
-      if (c.type === "item" && c.item_id) {
-        const item = items.find(i => i.id === c.item_id)
-        return { ...c, item }
+      if (c.type === "furniture" && c.items) {
+        return {
+          ...c,
+          items: c.items.map(fi => ({
+            ...fi,
+            item: items.find(i => i.id === fi.item_id),
+          })),
+        }
       }
       return c
     })
     setCells(joinedCells)
   }, [items])
 
-  // Reload cells when version selection or items change
   useEffect(() => {
     if (!selectedVersionId || !versions.length) return
     const ver = versions.find(v => v.id === selectedVersionId)
     if (ver) loadVersionCells(ver)
   }, [selectedVersionId, items, versions, loadVersionCells])
 
-  // ---- Build full grid (fill empty cells) ----
+  // ---- Build empty grid background ----
 
-  const fullGrid = useMemo(() => {
-    const grid: ClassroomGridCell[] = []
+  const emptyGridCells = useMemo(() => {
+    const occupied = getOccupiedCells(cells)
+    const empties: { row: number; col: number }[] = []
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
-        const existing = cells.find(cell => cell.row === r && cell.col === c)
-        grid.push(existing || { row: r, col: c, type: "empty" })
+        if (!occupied.has(`${r}-${c}`)) {
+          empties.push({ row: r, col: c })
+        }
       }
     }
-    return grid
+    return empties
   }, [cells, rows, cols])
 
-  // ---- Drag & Drop handlers ----
+  // ---- Drag & Drop ----
 
   const handleDragStart = (event: DragStartEvent) => {
     setDragData(event.active.data.current)
@@ -342,108 +470,139 @@ export default function ClassroomPage() {
 
   const handleDragEnd = (event: DragEndEvent) => {
     setDragData(null)
-    const { active, over } = event
+    const { over } = event
     if (!over || !isTeacher) return
-
     const overData = over.data.current as any
-    const targetRow = overData?.row as number
-    const targetCol = overData?.col as number
-    if (targetRow == null || targetCol == null) return
+    const activeData = event.active.data.current as any
 
-    const activeData = active.data.current as any
-
-    if (activeData?.type === "sidebar-item") {
-      // Dropping an item from sidebar onto grid
+    if (activeData?.type === "sidebar-item" && overData?.furniture) {
+      // Drop item onto furniture
+      const furnitureCell = overData.furniture as ClassroomGridCell
       const item = activeData.item as Item
-      setCells(prev => {
-        const filtered = prev.filter(c => !(c.row === targetRow && c.col === targetCol))
-        return [...filtered, {
-          row: targetRow,
-          col: targetCol,
-          type: "item" as ClassroomCellType,
-          item_id: item.id,
-          quantity: 1,
-          label: item.name,
-          item,
-        }]
-      })
-    } else if (activeData?.type === "cell-content") {
-      // Moving existing cell content to new position
-      const sourceCell = activeData.cell as ClassroomGridCell
-      if (sourceCell.row === targetRow && sourceCell.col === targetCol) return
-
-      setCells(prev => {
-        // Remove from source
-        const filtered = prev.filter(c =>
-          !(c.row === sourceCell.row && c.col === sourceCell.col)
-        )
-        // Remove anything at target
-        const filtered2 = filtered.filter(c =>
-          !(c.row === targetRow && c.col === targetCol)
-        )
-        // Place at target
-        return [...filtered2, {
-          ...sourceCell,
-          row: targetRow,
-          col: targetCol,
-        }]
-      })
+      setCells(prev => prev.map(c => {
+        if (c.row === furnitureCell.row && c.col === furnitureCell.col) {
+          const existingItems = c.items || []
+          const existingIdx = existingItems.findIndex(fi => fi.item_id === item.id)
+          if (existingIdx >= 0) {
+            // Increment quantity
+            const updated = [...existingItems]
+            updated[existingIdx] = { ...updated[existingIdx], quantity: updated[existingIdx].quantity + 1 }
+            return { ...c, items: updated }
+          }
+          return {
+            ...c,
+            items: [...existingItems, { item_id: item.id, quantity: 1, label: item.name, item }],
+          }
+        }
+        return c
+      }))
+      toast.success(`已將 ${item.name} 放入 ${furnitureCell.label}`)
     }
   }
 
   // ---- Actions ----
 
-  const handleAddFurniture = (label: string) => {
-    // Find first empty cell
-    const emptyCell = fullGrid.find(c => c.type === "empty")
-    if (!emptyCell) {
-      toast.error("沒有空位了")
-      return
+  const handleAddFurniture = (label: string, w: number, h: number) => {
+    // Find first spot that fits
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (canPlace(cells, r, c, w, h, rows, cols)) {
+          setCells(prev => [...prev, {
+            row: r, col: c, type: "furniture",
+            label, furnitureType: label,
+            width: w, height: h, items: [],
+          }])
+          setShowAddFurniture(false)
+          return
+        }
+      }
     }
-    setCells(prev => [...prev, {
-      row: emptyCell.row,
-      col: emptyCell.col,
-      type: "furniture" as ClassroomCellType,
-      label,
-    }])
-    setFurnitureLabel("")
+    toast.error("沒有足夠的空間放置此家具")
   }
 
-  const handleRemoveCell = (row: number, col: number) => {
+  const handleRemoveFurniture = (row: number, col: number) => {
     setCells(prev => prev.filter(c => !(c.row === row && c.col === col)))
   }
 
-  const handleCellClick = (cell: ClassroomGridCell) => {
-    if (!isTeacher || cell.type !== "item") return
-    // Increment quantity on click
-    setCells(prev => prev.map(c =>
-      c.row === cell.row && c.col === cell.col
-        ? { ...c, quantity: (c.quantity || 1) + 1 }
-        : c
-    ))
+  const handleFurnitureClick = (cell: ClassroomGridCell) => {
+    setSelectedFurniture(cell)
+    setFurnitureDialogOpen(true)
   }
+
+  const handleRemoveItemFromFurniture = (furnitureRow: number, furnitureCol: number, itemId: string) => {
+    setCells(prev => prev.map(c => {
+      if (c.row === furnitureRow && c.col === furnitureCol) {
+        return { ...c, items: (c.items || []).filter(fi => fi.item_id !== itemId) }
+      }
+      return c
+    }))
+    // Update the dialog state
+    setSelectedFurniture(prev => {
+      if (!prev) return null
+      return { ...prev, items: (prev.items || []).filter(fi => fi.item_id !== itemId) }
+    })
+  }
+
+  const handleAddItemToFurniture = (furnitureRow: number, furnitureCol: number, item: Item, qty: number) => {
+    setCells(prev => prev.map(c => {
+      if (c.row === furnitureRow && c.col === furnitureCol) {
+        const existing = c.items || []
+        const idx = existing.findIndex(fi => fi.item_id === item.id)
+        if (idx >= 0) {
+          const updated = [...existing]
+          updated[idx] = { ...updated[idx], quantity: updated[idx].quantity + qty }
+          return { ...c, items: updated }
+        }
+        return { ...c, items: [...existing, { item_id: item.id, quantity: qty, label: item.name, item }] }
+      }
+      return c
+    }))
+    setSelectedFurniture(prev => {
+      if (!prev) return null
+      const existing = prev.items || []
+      const idx = existing.findIndex(fi => fi.item_id === item.id)
+      if (idx >= 0) {
+        const updated = [...existing]
+        updated[idx] = { ...updated[idx], quantity: updated[idx].quantity + qty }
+        return { ...prev, items: updated }
+      }
+      return { ...prev, items: [...existing, { item_id: item.id, quantity: qty, label: item.name, item }] }
+    })
+    toast.success(`已新增 ${item.name} x${qty}`)
+  }
+
+  const handleUpdateItemQty = (furnitureRow: number, furnitureCol: number, itemId: string, qty: number) => {
+    if (qty < 1) return
+    setCells(prev => prev.map(c => {
+      if (c.row === furnitureRow && c.col === furnitureCol) {
+        return { ...c, items: (c.items || []).map(fi => fi.item_id === itemId ? { ...fi, quantity: qty } : fi) }
+      }
+      return c
+    }))
+    setSelectedFurniture(prev => {
+      if (!prev) return null
+      return { ...prev, items: (prev.items || []).map(fi => fi.item_id === itemId ? { ...fi, quantity: qty } : fi) }
+    })
+  }
+
+  // ---- Save / Version management ----
 
   const handleSaveVersion = async (saveAsNew: boolean) => {
     if (!selectedClassroomId) return
-
     const body: any = {
       name: versionName || selectedVersion?.name || `配置 ${new Date().toLocaleDateString("zh-TW")}`,
       cells,
     }
-    if (!saveAsNew && selectedVersionId) {
-      body.id = selectedVersionId
-    }
+    if (!saveAsNew && selectedVersionId) body.id = selectedVersionId
 
     const res = await fetch(`/api/classrooms/${selectedClassroomId}/versions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     })
-
     if (res.ok) {
       const data = await res.json()
       toast.success(saveAsNew ? "已建立新版本" : "已儲存")
-      // Reload versions
       const vers = await fetch(`/api/classrooms/${selectedClassroomId}/versions`).then(r => r.json())
       setVersions(vers)
       if (saveAsNew && data.id) setSelectedVersionId(data.id)
@@ -470,7 +629,7 @@ export default function ClassroomPage() {
     const res = await fetch("/api/classrooms", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "新教室", rows: 8, cols: 10 }),
+      body: JSON.stringify({ name: "新教室", rows: 16, cols: 20 }),
     })
     if (res.ok) {
       const newCls = await res.json()
@@ -481,12 +640,12 @@ export default function ClassroomPage() {
   }
 
   const handleDeleteClassroom = async () => {
-    if (!selectedClassroomId) return
-    if (!confirm("確定要刪除此教室及所有版本？")) return
+    if (!selectedClassroomId || !confirm("確定要刪除此教室及所有版本？")) return
     const res = await fetch(`/api/classrooms/${selectedClassroomId}`, { method: "DELETE" })
     if (res.ok) {
-      setClassrooms(prev => prev.filter(c => c.id !== selectedClassroomId))
-      setSelectedClassroomId(classrooms.find(c => c.id !== selectedClassroomId)?.id || "")
+      const remaining = classrooms.filter(c => c.id !== selectedClassroomId)
+      setClassrooms(remaining)
+      setSelectedClassroomId(remaining[0]?.id || "")
       toast.success("已刪除教室")
     }
   }
@@ -500,9 +659,7 @@ export default function ClassroomPage() {
     })
     if (res.ok) {
       setClassrooms(prev => prev.map(c =>
-        c.id === selectedClassroomId
-          ? { ...c, name: editName, rows: editRows, cols: editCols }
-          : c
+        c.id === selectedClassroomId ? { ...c, name: editName, rows: editRows, cols: editCols } : c
       ))
       setShowSettings(false)
       toast.success("教室設定已更新")
@@ -512,12 +669,10 @@ export default function ClassroomPage() {
   // ---- Render ----
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-      </div>
-    )
+    return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" /></div>
   }
+
+  const furnitureCells = cells.filter(c => c.type === "furniture")
 
   return (
     <div className="space-y-4">
@@ -527,52 +682,60 @@ export default function ClassroomPage() {
           <MapPin className="w-6 h-6" />
           教室配置圖
         </h2>
-
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Classroom selector */}
-          <Select value={selectedClassroomId} onValueChange={(v) => v && setSelectedClassroomId(v)}>
-            <SelectTrigger className="w-[160px]">
-              <SelectValue placeholder="選擇教室" />
-            </SelectTrigger>
+          <Select value={selectedClassroomId} onValueChange={v => v && setSelectedClassroomId(v)}>
+            <SelectTrigger className="w-[150px]"><SelectValue placeholder="選擇教室" /></SelectTrigger>
             <SelectContent>
-              {classrooms.map(c => (
-                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-              ))}
+              {classrooms.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
             </SelectContent>
           </Select>
-
-          {/* Version selector */}
           {versions.length > 0 && (
-            <Select value={selectedVersionId} onValueChange={(v) => v && setSelectedVersionId(v)}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="選擇版本" />
-              </SelectTrigger>
+            <Select value={selectedVersionId} onValueChange={v => v && setSelectedVersionId(v)}>
+              <SelectTrigger className="w-[160px]"><SelectValue placeholder="選擇版本" /></SelectTrigger>
               <SelectContent>
                 {versions.map(v => (
                   <SelectItem key={v.id} value={v.id}>
-                    {v.name} {v.is_active ? "✓" : ""}
+                    {v.name}{v.is_active ? " ✓" : ""}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           )}
-
           {isTeacher && (
             <>
               <Button variant="outline" size="icon" onClick={() => {
                 setEditName(selectedClassroom?.name || "")
-                setEditRows(selectedClassroom?.rows || 8)
-                setEditCols(selectedClassroom?.cols || 10)
+                setEditRows(selectedClassroom?.rows || 16)
+                setEditCols(selectedClassroom?.cols || 20)
                 setShowSettings(true)
-              }}>
-                <Settings className="w-4 h-4" />
-              </Button>
+              }}><Settings className="w-4 h-4" /></Button>
               <Button variant="outline" size="icon" onClick={handleCreateClassroom}>
                 <Plus className="w-4 h-4" />
               </Button>
             </>
           )}
+          <Button variant="outline" size="icon" onClick={() => setShowEquipmentList(!showEquipmentList)}>
+            <List className="w-4 h-4" />
+          </Button>
+          <Button variant="outline" size="icon" onClick={() => {
+            if (selectedClassroom && selectedVersion) {
+              exportClassroomHTML(selectedClassroom, selectedVersion, cells)
+            }
+          }}>
+            <Printer className="w-4 h-4" />
+          </Button>
         </div>
+      </div>
+
+      {/* Search bar */}
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Input
+          placeholder="搜尋器材名稱，找到的家具會亮起來..."
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          className="pl-9"
+        />
       </div>
 
       {classrooms.length === 0 ? (
@@ -582,134 +745,102 @@ export default function ClassroomPage() {
             <p className="text-muted-foreground">尚未建立教室</p>
             {isTeacher && (
               <Button className="mt-4" onClick={handleCreateClassroom}>
-                <Plus className="w-4 h-4 mr-2" />
-                建立第一間教室
+                <Plus className="w-4 h-4 mr-2" />建立第一間教室
               </Button>
             )}
           </CardContent>
         </Card>
       ) : (
-        <DndContext
-          sensors={sensors}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-        >
+        <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div className="flex flex-col lg:flex-row gap-4">
             {/* Sidebar — teacher only */}
             {isTeacher && (
-              <div className="w-full lg:w-64 shrink-0 space-y-4">
-                {/* Placement mode */}
+              <div className="w-full lg:w-56 shrink-0 space-y-3">
+                {/* Add furniture */}
                 <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">放置工具</CardTitle>
+                  <CardHeader className="pb-2 pt-3 px-3">
+                    <CardTitle className="text-xs flex items-center justify-between">
+                      放置家具
+                      <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setShowAddFurniture(!showAddFurniture)}>
+                        {showAddFurniture ? "收合" : "展開"}
+                      </Button>
+                    </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex gap-1">
-                      <Button
-                        variant={placementMode === "item" ? "default" : "outline"}
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => setPlacementMode("item")}
-                      >
-                        <Package className="w-3 h-3 mr-1" />
-                        物品
-                      </Button>
-                      <Button
-                        variant={placementMode === "furniture" ? "default" : "outline"}
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => setPlacementMode("furniture")}
-                      >
-                        <Monitor className="w-3 h-3 mr-1" />
-                        家具
-                      </Button>
-                    </div>
-
-                    {placementMode === "furniture" && (
-                      <div className="space-y-2">
-                        <div className="flex gap-1">
-                          <Input
-                            value={furnitureLabel}
-                            onChange={e => setFurnitureLabel(e.target.value)}
-                            placeholder="家具名稱"
-                            className="text-sm"
-                          />
+                  {showAddFurniture && (
+                    <CardContent className="px-3 pb-3 space-y-2">
+                      <div className="grid grid-cols-2 gap-1 max-h-[30vh] overflow-y-auto">
+                        {FURNITURE_PRESETS.map(f => (
                           <Button
+                            key={f.label}
+                            variant="outline"
                             size="sm"
-                            disabled={!furnitureLabel.trim()}
-                            onClick={() => handleAddFurniture(furnitureLabel.trim())}
+                            className="text-[10px] h-7 px-1.5 justify-start"
+                            onClick={() => handleAddFurniture(f.label, f.defaultW, f.defaultH)}
                           >
-                            <Plus className="w-3 h-3" />
+                            <span className="mr-1">{f.icon}</span>
+                            {f.label}
                           </Button>
+                        ))}
+                      </div>
+                      <Separator />
+                      <p className="text-[10px] text-muted-foreground">自訂家具</p>
+                      <Input
+                        value={customLabel}
+                        onChange={e => setCustomLabel(e.target.value)}
+                        placeholder="名稱"
+                        className="text-xs h-7"
+                      />
+                      <div className="flex gap-1">
+                        <div className="flex-1">
+                          <Label className="text-[10px]">寬</Label>
+                          <Input type="number" value={customW} onChange={e => setCustomW(Number(e.target.value))} min={1} max={10} className="text-xs h-7" />
                         </div>
-                        <div className="flex flex-wrap gap-1">
-                          {FURNITURE_PRESETS.map(f => (
-                            <Button
-                              key={f}
-                              variant="outline"
-                              size="sm"
-                              className="text-xs h-7 px-2"
-                              onClick={() => handleAddFurniture(f)}
-                            >
-                              {f}
-                            </Button>
-                          ))}
+                        <div className="flex-1">
+                          <Label className="text-[10px]">高</Label>
+                          <Input type="number" value={customH} onChange={e => setCustomH(Number(e.target.value))} min={1} max={10} className="text-xs h-7" />
                         </div>
                       </div>
-                    )}
-                  </CardContent>
+                      <Button
+                        size="sm"
+                        className="w-full h-7 text-xs"
+                        disabled={!customLabel.trim()}
+                        onClick={() => { handleAddFurniture(customLabel.trim(), customW, customH); setCustomLabel("") }}
+                      >
+                        <Plus className="w-3 h-3 mr-1" />新增
+                      </Button>
+                    </CardContent>
+                  )}
                 </Card>
 
                 {/* Items list (draggable) */}
-                {placementMode === "item" && (
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">庫存物品</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-1 max-h-[50vh] overflow-y-auto">
-                        {items.map(item => (
-                          <DraggableItem key={item.id} item={item} />
-                        ))}
-                        {items.length === 0 && (
-                          <p className="text-xs text-muted-foreground text-center py-4">
-                            尚無庫存物品
-                          </p>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
+                <Card>
+                  <CardHeader className="pb-2 pt-3 px-3">
+                    <CardTitle className="text-xs">庫存物品（拖入家具）</CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-3 pb-3">
+                    <div className="space-y-0.5 max-h-[35vh] overflow-y-auto">
+                      {items.map(item => <DraggableItem key={item.id} item={item} />)}
+                      {items.length === 0 && <p className="text-xs text-muted-foreground text-center py-3">尚無庫存物品</p>}
+                    </div>
+                  </CardContent>
+                </Card>
 
                 {/* Version controls */}
                 <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">版本管理</CardTitle>
+                  <CardHeader className="pb-2 pt-3 px-3">
+                    <CardTitle className="text-xs">版本管理</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-2">
-                    <Input
-                      value={versionName}
-                      onChange={e => setVersionName(e.target.value)}
-                      placeholder={selectedVersion?.name || "版本名稱"}
-                      className="text-sm"
-                    />
+                  <CardContent className="px-3 pb-3 space-y-1.5">
+                    <Input value={versionName} onChange={e => setVersionName(e.target.value)} placeholder={selectedVersion?.name || "版本名稱"} className="text-xs h-7" />
                     <div className="flex gap-1">
-                      <Button size="sm" className="flex-1" onClick={() => handleSaveVersion(false)}>
-                        <Save className="w-3 h-3 mr-1" />
-                        儲存
+                      <Button size="sm" className="flex-1 h-7 text-xs" onClick={() => handleSaveVersion(false)}>
+                        <Save className="w-3 h-3 mr-1" />儲存
                       </Button>
-                      <Button size="sm" variant="outline" className="flex-1" onClick={() => handleSaveVersion(true)}>
-                        <Copy className="w-3 h-3 mr-1" />
-                        另存新版
+                      <Button size="sm" variant="outline" className="flex-1 h-7 text-xs" onClick={() => handleSaveVersion(true)}>
+                        <Copy className="w-3 h-3 mr-1" />另存
                       </Button>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="w-full"
-                      onClick={handleSetActive}
-                      disabled={selectedVersion?.is_active}
-                    >
+                    <Button size="sm" variant="outline" className="w-full h-7 text-xs" onClick={handleSetActive} disabled={selectedVersion?.is_active}>
                       <Check className="w-3 h-3 mr-1" />
                       {selectedVersion?.is_active ? "目前使用中" : "設為使用中"}
                     </Button>
@@ -718,42 +849,69 @@ export default function ClassroomPage() {
               </div>
             )}
 
-            {/* Grid */}
-            <div className="flex-1 overflow-auto">
-              <div className="border rounded-lg bg-muted/30 p-4 inline-block min-w-fit">
-                <div className="text-sm font-semibold text-foreground mb-2">
+            {/* Main area: Grid + Equipment list */}
+            <div className="flex-1 space-y-4">
+              {/* Grid */}
+              <div className="border rounded-lg bg-muted/30 p-3 overflow-auto">
+                <div className="text-xs font-medium text-foreground mb-2">
                   {selectedClassroom?.name} — {selectedVersion?.name || ""}
-                  {selectedVersion?.is_active && (
-                    <span className="ml-2 text-xs text-green-600 font-normal">使用中</span>
-                  )}
+                  {selectedVersion?.is_active && <span className="ml-1 text-green-600">（使用中）</span>}
+                  <span className="ml-2 text-muted-foreground">{rows}×{cols}</span>
                 </div>
                 <div
-                  className="grid"
+                  className="grid relative"
                   style={{
                     gridTemplateColumns: `repeat(${cols}, ${CELL_SIZE}px)`,
                     gridTemplateRows: `repeat(${rows}, ${CELL_SIZE}px)`,
                     gap: `${CELL_GAP}px`,
+                    width: cols * (CELL_SIZE + CELL_GAP) - CELL_GAP,
+                    background: "#e5e7eb",
+                    borderRadius: 4,
+                    padding: CELL_GAP,
                   }}
                 >
-                  {fullGrid.map(cell => (
-                    <div
-                      key={`${cell.row}-${cell.col}`}
-                      style={{ width: CELL_SIZE, height: CELL_SIZE }}
-                      onDoubleClick={() => handleCellClick(cell)}
-                    >
-                      <DroppableCell
-                        cell={cell}
-                        isTeacher={isTeacher}
-                        onRemove={handleRemoveCell}
-                      />
-                    </div>
+                  {/* Empty cells (droppable background) */}
+                  {emptyGridCells.map(({ row, col }) => (
+                    <DroppableCell
+                      key={`empty-${row}-${col}`}
+                      row={row}
+                      col={col}
+                      highlighted={false}
+                    />
+                  ))}
+
+                  {/* Furniture blocks */}
+                  {furnitureCells.map(cell => (
+                    <FurnitureBlock
+                      key={`f-${cell.row}-${cell.col}`}
+                      cell={cell}
+                      isTeacher={isTeacher}
+                      highlighted={highlightedCells.has(`${cell.row}-${cell.col}`)}
+                      onRemove={() => handleRemoveFurniture(cell.row, cell.col)}
+                      onClick={() => handleFurnitureClick(cell)}
+                    />
                   ))}
                 </div>
+                {isTeacher && (
+                  <p className="text-[10px] text-muted-foreground mt-2">
+                    從左側拖曳物品到家具上放入。點擊家具查看/管理內容物。
+                  </p>
+                )}
               </div>
-              {isTeacher && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  從左側拖曳物品到格子上放置。雙擊物品可增加數量。拖曳格子內物品可移動位置。
-                </p>
+
+              {/* Equipment list panel (toggleable) */}
+              {showEquipmentList && (
+                <Card>
+                  <CardHeader className="pb-2 pt-3 px-4">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Package className="w-4 h-4" />
+                      器材清單
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-3">
+                    <EquipmentListPanel cells={cells} searchQuery={searchQuery} />
+                  </CardContent>
+                </Card>
               )}
             </div>
           </div>
@@ -764,53 +922,113 @@ export default function ClassroomPage() {
         </DndContext>
       )}
 
+      {/* Furniture detail dialog */}
+      <Dialog open={furnitureDialogOpen} onOpenChange={setFurnitureDialogOpen}>
+        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Monitor className="w-5 h-5" />
+              {selectedFurniture?.label || "家具"}
+              <Badge variant="outline" className="text-xs">
+                {selectedFurniture?.width || 1}×{selectedFurniture?.height || 1}
+              </Badge>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              位置：第 {(selectedFurniture?.row || 0) + 1} 列，第 {(selectedFurniture?.col || 0) + 1} 欄
+            </p>
+            <Separator />
+            <p className="text-sm font-medium">存放器材：</p>
+            {(!selectedFurniture?.items || selectedFurniture.items.length === 0) ? (
+              <p className="text-sm text-muted-foreground">尚無器材。{isTeacher ? "從側邊欄拖曳物品到此家具上。" : ""}</p>
+            ) : (
+              <div className="space-y-2">
+                {selectedFurniture.items.map(fi => (
+                  <div key={fi.item_id} className="flex items-center gap-2 border rounded-lg p-2">
+                    <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-xs shrink-0">
+                      {fi.quantity}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{fi.item?.name || fi.label}</p>
+                      {fi.item?.category && <p className="text-xs text-muted-foreground">{(fi.item.category as any)?.name}</p>}
+                    </div>
+                    {isTeacher && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button variant="outline" size="icon" className="w-6 h-6"
+                          onClick={() => handleUpdateItemQty(selectedFurniture!.row, selectedFurniture!.col, fi.item_id, fi.quantity - 1)}
+                        >-</Button>
+                        <span className="text-xs w-6 text-center">{fi.quantity}</span>
+                        <Button variant="outline" size="icon" className="w-6 h-6"
+                          onClick={() => handleUpdateItemQty(selectedFurniture!.row, selectedFurniture!.col, fi.item_id, fi.quantity + 1)}
+                        >+</Button>
+                        <Button variant="ghost" size="icon" className="w-6 h-6 text-destructive"
+                          onClick={() => handleRemoveItemFromFurniture(selectedFurniture!.row, selectedFurniture!.col, fi.item_id)}
+                        ><Trash2 className="w-3 h-3" /></Button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* Quick add item to this furniture */}
+            {isTeacher && selectedFurniture && (
+              <>
+                <Separator />
+                <p className="text-sm font-medium">快速新增器材：</p>
+                <div className="flex gap-1 items-end">
+                  <div className="flex-1">
+                    <Select onValueChange={v => {
+                      if (!v) return
+                      const item = items.find(i => i.id === v)
+                      if (item) handleAddItemToFurniture(selectedFurniture.row, selectedFurniture.col, item, addItemQty)
+                    }}>
+                      <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="選擇物品" /></SelectTrigger>
+                      <SelectContent>
+                        {items.map(item => (
+                          <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Input type="number" value={addItemQty} onChange={e => setAddItemQty(Number(e.target.value))} min={1} className="w-16 h-8 text-xs" />
+                </div>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Settings modal */}
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowSettings(false)}>
           <Card className="w-full max-w-sm mx-4" onClick={e => e.stopPropagation()}>
-            <CardHeader>
-              <CardTitle className="text-base">教室設定</CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle className="text-base">教室設定</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div>
-                <label className="text-sm text-muted-foreground">教室名稱</label>
+                <Label className="text-sm">教室名稱</Label>
                 <Input value={editName} onChange={e => setEditName(e.target.value)} />
               </div>
               <div className="flex gap-3">
                 <div className="flex-1">
-                  <label className="text-sm text-muted-foreground">列數</label>
-                  <Input type="number" value={editRows} onChange={e => setEditRows(Number(e.target.value))} min={3} max={20} />
+                  <Label className="text-sm">列數</Label>
+                  <Input type="number" value={editRows} onChange={e => setEditRows(Number(e.target.value))} min={5} max={30} />
                 </div>
                 <div className="flex-1">
-                  <label className="text-sm text-muted-foreground">欄數</label>
-                  <Input type="number" value={editCols} onChange={e => setEditCols(Number(e.target.value))} min={3} max={20} />
+                  <Label className="text-sm">欄數</Label>
+                  <Input type="number" onChange={e => setEditCols(Number(e.target.value))} value={editCols} min={5} max={30} />
                 </div>
               </div>
               <div className="flex gap-2 pt-2">
                 <Button className="flex-1" onClick={handleSaveSettings}>
-                  <Save className="w-4 h-4 mr-2" />
-                  儲存
+                  <Save className="w-4 h-4 mr-2" />儲存
                 </Button>
                 <Button variant="destructive" onClick={handleDeleteClassroom}>
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  刪除教室
+                  <Trash2 className="w-4 h-4 mr-2" />刪除
                 </Button>
               </div>
             </CardContent>
           </Card>
-        </div>
-      )}
-
-      {/* Item legend */}
-      {cells.filter(c => c.type === "item").length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          {cells.filter(c => c.type === "item").map((cell, i) => (
-            <div key={i} className="flex items-center gap-2 text-sm border rounded-lg p-2">
-              <div className="w-4 h-4 rounded-full bg-indigo-500 shrink-0" />
-              <span className="truncate">{cell.item?.name || cell.label}</span>
-              <span className="text-muted-foreground ml-auto">x{cell.quantity || 1}</span>
-            </div>
-          ))}
         </div>
       )}
     </div>

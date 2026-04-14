@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils"
 import { useAuthStore } from "@/stores/auth-store"
 import {
   Package, MapPin, ArrowLeftRight, ScanLine,
-  Bot, BookOpen, CalendarClock, Settings, LogOut, Menu, X
+  Bot, BookOpen, CalendarClock, Settings, LogOut, Menu, X, ClipboardList
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useState } from "react"
@@ -18,6 +18,7 @@ const teacherNav = [
   { href: "/scanner", label: "掃碼", icon: ScanLine },
   { href: "/ai-designer", label: "AI 專案", icon: Bot },
   { href: "/knowledge", label: "知識庫", icon: BookOpen },
+  { href: "/project-planner", label: "專案規劃", icon: ClipboardList },
   { href: "/bookings", label: "預約排程", icon: CalendarClock },
   { href: "/settings", label: "設定", icon: Settings },
 ]
@@ -28,6 +29,7 @@ const studentNav = [
   { href: "/scanner", label: "掃碼借還", icon: ScanLine },
   { href: "/ai-designer", label: "AI 專案", icon: Bot },
   { href: "/knowledge", label: "知識庫", icon: BookOpen },
+  { href: "/project-planner", label: "專案規劃", icon: ClipboardList },
   { href: "/bookings", label: "預約排程", icon: CalendarClock },
 ]
 
