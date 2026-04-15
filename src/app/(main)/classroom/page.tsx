@@ -874,18 +874,26 @@ export default function ClassroomPage() {
           教室配置圖
         </h2>
         <div className="flex items-center gap-2 flex-wrap">
-          <Select value={selectedClassroomId} onValueChange={v => v && setSelectedClassroomId(v)}>
+          <Select
+            value={selectedClassroomId}
+            onValueChange={v => v && setSelectedClassroomId(v)}
+            items={classrooms.map(c => ({ value: c.id, label: c.name }))}
+          >
             <SelectTrigger className="w-[150px]"><SelectValue placeholder="選擇教室" /></SelectTrigger>
             <SelectContent>
-              {classrooms.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+              {classrooms.map(c => <SelectItem key={c.id} value={c.id} label={c.name}>{c.name}</SelectItem>)}
             </SelectContent>
           </Select>
           {versions.length > 0 && (
-            <Select value={selectedVersionId} onValueChange={v => v && setSelectedVersionId(v)}>
+            <Select
+              value={selectedVersionId}
+              onValueChange={v => v && setSelectedVersionId(v)}
+              items={versions.map(v => ({ value: v.id, label: `${v.name}${v.is_active ? " ✓" : ""}` }))}
+            >
               <SelectTrigger className="w-[160px]"><SelectValue placeholder="選擇版本" /></SelectTrigger>
               <SelectContent>
                 {versions.map(v => (
-                  <SelectItem key={v.id} value={v.id}>
+                  <SelectItem key={v.id} value={v.id} label={`${v.name}${v.is_active ? " ✓" : ""}`}>
                     {v.name}{v.is_active ? " ✓" : ""}
                   </SelectItem>
                 ))}
@@ -1206,15 +1214,18 @@ export default function ClassroomPage() {
                 <p className="text-sm font-medium">快速新增器材：</p>
                 <div className="flex gap-1 items-end">
                   <div className="flex-1">
-                    <Select onValueChange={v => {
-                      if (!v) return
-                      const item = items.find(i => i.id === v)
-                      if (item) handleAddItemToFurniture(selectedFurniture.row, selectedFurniture.col, item, addItemQty)
-                    }}>
+                    <Select
+                      onValueChange={v => {
+                        if (!v) return
+                        const item = items.find(i => i.id === v)
+                        if (item) handleAddItemToFurniture(selectedFurniture.row, selectedFurniture.col, item, addItemQty)
+                      }}
+                      items={items.map(i => ({ value: i.id, label: i.name }))}
+                    >
                       <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="選擇物品" /></SelectTrigger>
                       <SelectContent>
                         {items.map(item => (
-                          <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
+                          <SelectItem key={item.id} value={item.id} label={item.name}>{item.name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>

@@ -74,15 +74,26 @@ export default function TransactionsPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input placeholder="搜尋..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
         </div>
-        <Select value={typeFilter} onValueChange={(v) => v && setTypeFilter(v)}>
+        <Select
+          value={typeFilter}
+          onValueChange={(v) => v && setTypeFilter(v)}
+          items={[
+            { value: "all", label: "所有類型" },
+            { value: "borrow", label: "借出" },
+            { value: "return", label: "歸還" },
+            { value: "purchase", label: "購入" },
+            { value: "repair", label: "報修" },
+            { value: "dispose", label: "報銷" },
+          ]}
+        >
           <SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="所有類型" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">所有類型</SelectItem>
-            <SelectItem value="borrow">借出</SelectItem>
-            <SelectItem value="return">歸還</SelectItem>
-            <SelectItem value="purchase">購入</SelectItem>
-            <SelectItem value="repair">報修</SelectItem>
-            <SelectItem value="dispose">報銷</SelectItem>
+            <SelectItem value="all" label="所有類型">所有類型</SelectItem>
+            <SelectItem value="borrow" label="借出">借出</SelectItem>
+            <SelectItem value="return" label="歸還">歸還</SelectItem>
+            <SelectItem value="purchase" label="購入">購入</SelectItem>
+            <SelectItem value="repair" label="報修">報修</SelectItem>
+            <SelectItem value="dispose" label="報銷">報銷</SelectItem>
           </SelectContent>
         </Select>
       </div>

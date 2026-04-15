@@ -133,14 +133,24 @@ export default function BookingsPage() {
           </div>
 
           {/* Status filter */}
-          <Select value={statusFilter} onValueChange={(v) => v && setStatusFilter(v)}>
+          <Select
+            value={statusFilter}
+            onValueChange={(v) => v && setStatusFilter(v)}
+            items={[
+              { value: "all", label: "全部" },
+              { value: "pending", label: "待確認" },
+              { value: "confirmed", label: "已確認" },
+              { value: "in_progress", label: "進行中" },
+              { value: "completed", label: "已完成" },
+            ]}
+          >
             <SelectTrigger className="w-[130px]"><SelectValue placeholder="狀態" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部</SelectItem>
-              <SelectItem value="pending">待確認</SelectItem>
-              <SelectItem value="confirmed">已確認</SelectItem>
-              <SelectItem value="in_progress">進行中</SelectItem>
-              <SelectItem value="completed">已完成</SelectItem>
+              <SelectItem value="all" label="全部">全部</SelectItem>
+              <SelectItem value="pending" label="待確認">待確認</SelectItem>
+              <SelectItem value="confirmed" label="已確認">已確認</SelectItem>
+              <SelectItem value="in_progress" label="進行中">進行中</SelectItem>
+              <SelectItem value="completed" label="已完成">已完成</SelectItem>
             </SelectContent>
           </Select>
 

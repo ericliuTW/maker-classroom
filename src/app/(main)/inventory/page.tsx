@@ -150,14 +150,18 @@ export default function InventoryPage() {
             className="pl-9"
           />
         </div>
-        <Select value={categoryFilter} onValueChange={(v) => v && setCategoryFilter(v)}>
+        <Select
+          value={categoryFilter}
+          onValueChange={(v) => v && setCategoryFilter(v)}
+          items={[{ value: "all", label: "所有分類" }, ...categories.map(c => ({ value: c.id, label: c.name }))]}
+        >
           <SelectTrigger className="w-full sm:w-[180px]">
             <SelectValue placeholder="所有分類" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">所有分類</SelectItem>
+            <SelectItem value="all" label="所有分類">所有分類</SelectItem>
             {categories.map(c => (
-              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+              <SelectItem key={c.id} value={c.id} label={c.name}>{c.name}</SelectItem>
             ))}
           </SelectContent>
         </Select>

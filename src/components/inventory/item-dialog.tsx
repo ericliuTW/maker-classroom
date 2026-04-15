@@ -82,24 +82,37 @@ export function ItemDialog({ open, onOpenChange, item, categories, onSave }: Pro
             </div>
             <div className="space-y-2">
               <Label>分類</Label>
-              <Select value={form.category_id} onValueChange={v => v && setForm(f => ({ ...f, category_id: v }))}>
+              <Select
+                value={form.category_id}
+                onValueChange={v => v && setForm(f => ({ ...f, category_id: v }))}
+                items={categories.map(c => ({ value: c.id, label: c.name }))}
+              >
                 <SelectTrigger><SelectValue placeholder="選擇分類" /></SelectTrigger>
                 <SelectContent>
                   {categories.map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    <SelectItem key={c.id} value={c.id} label={c.name}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
               <Label>狀態</Label>
-              <Select value={form.status} onValueChange={v => v && setForm(f => ({ ...f, status: v }))}>
+              <Select
+                value={form.status}
+                onValueChange={v => v && setForm(f => ({ ...f, status: v }))}
+                items={[
+                  { value: "available", label: "正常" },
+                  { value: "low_stock", label: "低庫存" },
+                  { value: "out_of_stock", label: "缺貨" },
+                  { value: "discontinued", label: "停用" },
+                ]}
+              >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="available">正常</SelectItem>
-                  <SelectItem value="low_stock">低庫存</SelectItem>
-                  <SelectItem value="out_of_stock">缺貨</SelectItem>
-                  <SelectItem value="discontinued">停用</SelectItem>
+                  <SelectItem value="available" label="正常">正常</SelectItem>
+                  <SelectItem value="low_stock" label="低庫存">低庫存</SelectItem>
+                  <SelectItem value="out_of_stock" label="缺貨">缺貨</SelectItem>
+                  <SelectItem value="discontinued" label="停用">停用</SelectItem>
                 </SelectContent>
               </Select>
             </div>

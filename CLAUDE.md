@@ -66,3 +66,4 @@ categories, items, item_locations, classroom_config (legacy), classrooms, classr
 - 2026-04-14：大功能更新 — 教室配置圖全面改造（家具跨格/多物品/搜尋高亮/器材清單/一鍵輸出HTML/亂碼修復）、知識庫改造（技能標籤/心智圖view/專案詳情頁/匯入按鈕）、新增專案規劃區模組、預約排程改造（日曆view/詳情彈窗/材料欄位/從專案規劃匯入）、知識庫自動爬取排程（Vercel Cron 每日6AM）
 - 2026-04-14：心智圖縮放+拖曳範圍限制、庫存＆教室新增試算表VIEW（可選欄位/可編輯/連動資料庫）、新增 /api/items/locations API
 - 2026-04-14：全 API serializeDoc 統一修復亂碼、庫存表格升級（排序/欄位設定/擺放位置/借出數量）、教室 LIST VIEW、專案規劃新增「待排程」（設備排程+時段衝突檢查）+ 使用代碼顯示
+- 2026-04-15：修復 Select 下拉選單顯示 doc ID 而非名稱的問題（Base UI Select 需在 Root 傳入 items 陣列 + Item 加 label prop 才能在未開啟 dropdown 時解析 label），共修正 7 處 dropdown（教室/版本/分類篩選/分類設定/狀態/預約狀態/異動類型/難度/器材選擇）

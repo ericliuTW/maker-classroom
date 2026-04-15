@@ -957,13 +957,22 @@ export default function KnowledgePage() {
             className="pl-9"
           />
         </div>
-        <Select value={difficultyFilter} onValueChange={(v) => v && setDifficultyFilter(v)}>
+        <Select
+          value={difficultyFilter}
+          onValueChange={(v) => v && setDifficultyFilter(v)}
+          items={[
+            { value: "all", label: "所有難度" },
+            { value: "beginner", label: "入門" },
+            { value: "intermediate", label: "中級" },
+            { value: "advanced", label: "進階" },
+          ]}
+        >
           <SelectTrigger className="w-full sm:w-[140px]"><SelectValue placeholder="難度" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">所有難度</SelectItem>
-            <SelectItem value="beginner">入門</SelectItem>
-            <SelectItem value="intermediate">中級</SelectItem>
-            <SelectItem value="advanced">進階</SelectItem>
+            <SelectItem value="all" label="所有難度">所有難度</SelectItem>
+            <SelectItem value="beginner" label="入門">入門</SelectItem>
+            <SelectItem value="intermediate" label="中級">中級</SelectItem>
+            <SelectItem value="advanced" label="進階">進階</SelectItem>
           </SelectContent>
         </Select>
 
