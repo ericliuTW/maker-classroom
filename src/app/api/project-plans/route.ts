@@ -2,6 +2,19 @@ import { NextRequest, NextResponse } from "next/server"
 import { adminDb } from "@/lib/firebase-admin"
 import { verifyTeacher } from "@/lib/auth-helper"
 
+function serializeDoc(doc: FirebaseFirestore.DocumentSnapshot) {
+  const data = doc.data()!
+  const result: any = { id: doc.id }
+  for (const [key, val] of Object.entries(data)) {
+    if (val && typeof val === "object" && typeof val.toDate === "function") {
+      result[key] = val.toDate().toISOString()
+    } else {
+      result[key] = val
+    }
+  }
+  return result
+}
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const status = searchParams.get("status")
@@ -24,7 +37,7 @@ export async function GET(request: NextRequest) {
   }
 
   const snapshot = await query.get()
-  const plans = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+  const plans = snapshot.docs.map(serializeDoc)
 
   return NextResponse.json(plans)
 }
@@ -52,7 +65,7 @@ export async function POST(request: NextRequest) {
   })
 
   const doc = await docRef.get()
-  return NextResponse.json({ id: doc.id, ...doc.data() })
+  return NextResponse.json(serializeDoc(doc))
 }
 
 export async function PUT(request: NextRequest) {
@@ -65,7 +78,7 @@ export async function PUT(request: NextRequest) {
   await adminDb.collection("project_plans").doc(id).update(updates)
 
   const doc = await adminDb.collection("project_plans").doc(id).get()
-  return NextResponse.json({ id: doc.id, ...doc.data() })
+  return NextResponse.json(serializeDoc(doc))
 }
 
 export async function DELETE(request: NextRequest) {

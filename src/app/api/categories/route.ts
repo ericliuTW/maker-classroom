@@ -2,13 +2,26 @@ import { NextRequest, NextResponse } from "next/server"
 import { adminDb } from "@/lib/firebase-admin"
 import { verifyTeacher } from "@/lib/auth-helper"
 
+function serializeDoc(doc: FirebaseFirestore.DocumentSnapshot) {
+  const data = doc.data()!
+  const result: any = { id: doc.id }
+  for (const [key, val] of Object.entries(data)) {
+    if (val && typeof val === "object" && typeof val.toDate === "function") {
+      result[key] = val.toDate().toISOString()
+    } else {
+      result[key] = val
+    }
+  }
+  return result
+}
+
 export async function GET() {
   const snapshot = await adminDb
     .collection("categories")
     .orderBy("name")
     .get()
 
-  const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+  const data = snapshot.docs.map(serializeDoc)
   return NextResponse.json(data)
 }
 
@@ -25,5 +38,5 @@ export async function POST(request: NextRequest) {
   })
 
   const doc = await docRef.get()
-  return NextResponse.json({ id: doc.id, ...doc.data() })
+  return NextResponse.json(serializeDoc(doc))
 }

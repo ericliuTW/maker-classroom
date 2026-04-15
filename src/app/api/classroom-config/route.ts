@@ -2,6 +2,19 @@ import { NextRequest, NextResponse } from "next/server"
 import { adminDb } from "@/lib/firebase-admin"
 import { verifyTeacher } from "@/lib/auth-helper"
 
+function serializeDoc(doc: FirebaseFirestore.DocumentSnapshot) {
+  const data = doc.data()!
+  const result: any = { id: doc.id }
+  for (const [key, val] of Object.entries(data)) {
+    if (val && typeof val === "object" && typeof val.toDate === "function") {
+      result[key] = val.toDate().toISOString()
+    } else {
+      result[key] = val
+    }
+  }
+  return result
+}
+
 export async function GET() {
   // Get config (single doc)
   const configSnapshot = await adminDb.collection("classroom_config").limit(1).get()
@@ -16,10 +29,10 @@ export async function GET() {
       updated_at: new Date().toISOString(),
     })
     const doc = await docRef.get()
-    config = { id: doc.id, ...doc.data() }
+    config = serializeDoc(doc)
   } else {
     const doc = configSnapshot.docs[0]
-    config = { id: doc.id, ...doc.data() }
+    config = serializeDoc(doc)
   }
 
   // Get locations with item data
@@ -27,14 +40,14 @@ export async function GET() {
   const locations = []
 
   for (const locDoc of locSnapshot.docs) {
-    const loc: any = { id: locDoc.id, ...locDoc.data() }
+    const loc: any = serializeDoc(locDoc)
     if (loc.item_id) {
       const itemDoc = await adminDb.collection("items").doc(loc.item_id).get()
       if (itemDoc.exists) {
-        const item: any = { id: itemDoc.id, ...itemDoc.data() }
+        const item: any = serializeDoc(itemDoc)
         if (item.category_id) {
           const catDoc = await adminDb.collection("categories").doc(item.category_id).get()
-          item.category = catDoc.exists ? { id: catDoc.id, ...catDoc.data() } : null
+          item.category = catDoc.exists ? serializeDoc(catDoc) : null
         }
         loc.item = item
       }

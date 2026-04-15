@@ -25,10 +25,10 @@ import { Separator } from "@/components/ui/separator"
 import { toast } from "sonner"
 import {
   MapPin, Plus, Save, Trash2, X, Monitor, Package, Search,
-  ChevronDown, Check, Settings, Copy, Printer, List, Sheet,
+  ChevronDown, Check, Settings, Copy, Printer, List,
   DoorOpen, Square, Zap, RectangleHorizontal,
+  ArrowUpDown, ArrowUp, ArrowDown,
 } from "lucide-react"
-import { SpreadsheetView, type SpreadsheetRow } from "@/components/shared/spreadsheet-view"
 import type {
   Item, Classroom, ClassroomVersion, ClassroomGridCell, FurnitureItem,
 } from "@/types/database"
@@ -336,6 +336,160 @@ ${equipmentList.length > 0 ? `<table><thead><tr><th>器材名稱</th><th>數量<
 }
 
 // ============================================================
+// ClassroomListView — sortable table of all items in classroom
+// ============================================================
+
+interface ListRowType {
+  key: string; name: string; category: string; furniture: string
+  furnitureRow: number; furnitureCol: number; qty: number
+  totalQty: number; unit: string; itemId: string
+}
+
+function ClassroomListView({
+  rows, classroomName, searchQuery, isTeacher, onUpdateQty, onRemoveItem,
+}: {
+  rows: ListRowType[]
+  classroomName: string
+  searchQuery: string
+  isTeacher: boolean
+  onUpdateQty: (fRow: number, fCol: number, itemId: string, qty: number) => void
+  onRemoveItem: (fRow: number, fCol: number, itemId: string) => void
+}) {
+  const [sortKey, setSortKey] = useState<"name" | "furniture" | "qty" | "totalQty" | "category" | null>(null)
+  const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null)
+  const [editingKey, setEditingKey] = useState<string | null>(null)
+  const [editVal, setEditVal] = useState("")
+
+  const handleSort = (key: typeof sortKey) => {
+    if (sortKey !== key) { setSortKey(key); setSortDir("asc") }
+    else if (sortDir === "asc") setSortDir("desc")
+    else { setSortKey(null); setSortDir(null) }
+  }
+
+  const SortIcon = ({ k }: { k: typeof sortKey }) => {
+    if (sortKey !== k) return <ArrowUpDown className="ml-1 h-3 w-3 inline opacity-30" />
+    return sortDir === "asc"
+      ? <ArrowUp className="ml-1 h-3 w-3 inline text-blue-600" />
+      : <ArrowDown className="ml-1 h-3 w-3 inline text-blue-600" />
+  }
+
+  const filtered = searchQuery.trim()
+    ? rows.filter(r =>
+        r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        r.furniture.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        r.category.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : rows
+
+  const sorted = sortKey && sortDir
+    ? [...filtered].sort((a, b) => {
+        let cmp = 0
+        if (sortKey === "name") cmp = a.name.localeCompare(b.name, "zh-TW")
+        else if (sortKey === "furniture") cmp = a.furniture.localeCompare(b.furniture, "zh-TW")
+        else if (sortKey === "category") cmp = a.category.localeCompare(b.category, "zh-TW")
+        else if (sortKey === "qty") cmp = a.qty - b.qty
+        else if (sortKey === "totalQty") cmp = a.totalQty - b.totalQty
+        return sortDir === "asc" ? cmp : -cmp
+      })
+    : filtered
+
+  return (
+    <div className="space-y-2">
+      <div className="text-sm font-medium text-muted-foreground">
+        {classroomName} — 物品清單（{sorted.length} 項）
+      </div>
+      <div className="border rounded-lg overflow-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b bg-muted/50">
+              <th className="p-3 text-left font-medium cursor-pointer hover:bg-muted/80 select-none" onClick={() => handleSort("name")}>
+                物品名稱 <SortIcon k="name" />
+              </th>
+              <th className="p-3 text-left font-medium cursor-pointer hover:bg-muted/80 select-none hidden md:table-cell" onClick={() => handleSort("category")}>
+                分類 <SortIcon k="category" />
+              </th>
+              <th className="p-3 text-left font-medium cursor-pointer hover:bg-muted/80 select-none" onClick={() => handleSort("furniture")}>
+                擺放位置 <SortIcon k="furniture" />
+              </th>
+              <th className="p-3 text-right font-medium cursor-pointer hover:bg-muted/80 select-none" onClick={() => handleSort("qty")}>
+                擺放數量 <SortIcon k="qty" />
+              </th>
+              <th className="p-3 text-right font-medium cursor-pointer hover:bg-muted/80 select-none hidden md:table-cell" onClick={() => handleSort("totalQty")}>
+                庫存總量 <SortIcon k="totalQty" />
+              </th>
+              <th className="p-3 text-left font-medium hidden md:table-cell">單位</th>
+              {isTeacher && <th className="p-3 text-right font-medium">操作</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.length === 0 ? (
+              <tr>
+                <td colSpan={isTeacher ? 7 : 6} className="p-8 text-center text-muted-foreground">
+                  {searchQuery ? "未找到符合的器材" : "此教室尚無器材擺放"}
+                </td>
+              </tr>
+            ) : sorted.map(row => (
+              <tr key={row.key} className="border-b hover:bg-muted/30 transition-colors">
+                <td className="p-3 font-medium">{row.name}</td>
+                <td className="p-3 text-muted-foreground hidden md:table-cell">{row.category}</td>
+                <td className="p-3">
+                  <div className="flex items-center gap-1 text-sm">
+                    <MapPin className="w-3 h-3 text-indigo-500 shrink-0" />
+                    {row.furniture}
+                  </div>
+                </td>
+                <td className="p-3 text-right tabular-nums">
+                  {isTeacher && editingKey === row.key ? (
+                    <Input
+                      autoFocus
+                      type="number"
+                      min={0}
+                      value={editVal}
+                      onChange={e => setEditVal(e.target.value)}
+                      onBlur={() => {
+                        const n = Number(editVal)
+                        if (!isNaN(n) && n >= 0) onUpdateQty(row.furnitureRow, row.furnitureCol, row.itemId, n)
+                        setEditingKey(null)
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") {
+                          const n = Number(editVal)
+                          if (!isNaN(n) && n >= 0) onUpdateQty(row.furnitureRow, row.furnitureCol, row.itemId, n)
+                          setEditingKey(null)
+                        }
+                        if (e.key === "Escape") setEditingKey(null)
+                      }}
+                      className="h-7 w-20 text-sm text-right ml-auto"
+                    />
+                  ) : (
+                    <span
+                      className={isTeacher ? "cursor-pointer px-1.5 py-0.5 rounded hover:bg-blue-100 hover:text-blue-800 transition-colors" : ""}
+                      onClick={isTeacher ? () => { setEditingKey(row.key); setEditVal(String(row.qty)) } : undefined}
+                      title={isTeacher ? "點擊編輯" : undefined}
+                    >
+                      {row.qty}
+                    </span>
+                  )}
+                </td>
+                <td className="p-3 text-right tabular-nums text-muted-foreground hidden md:table-cell">{row.totalQty}</td>
+                <td className="p-3 text-muted-foreground hidden md:table-cell">{row.unit}</td>
+                {isTeacher && (
+                  <td className="p-3 text-right">
+                    <Button variant="ghost" size="icon" className="w-7 h-7" onClick={() => onRemoveItem(row.furnitureRow, row.furnitureCol, row.itemId)}>
+                      <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                    </Button>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
 // Main Page
 // ============================================================
 
@@ -395,52 +549,40 @@ export default function ClassroomPage() {
     return set
   }, [cells, searchQuery])
 
-  // Build spreadsheet rows from current classroom cells
-  const classroomSpreadsheetRows = useMemo((): SpreadsheetRow[] => {
-    const rows: SpreadsheetRow[] = []
+  // Build list-view rows from current cells (reactive — updates when cells change)
+  interface ListRow {
+    key: string
+    name: string
+    category: string
+    furniture: string
+    furnitureRow: number
+    furnitureCol: number
+    qty: number
+    totalQty: number
+    unit: string
+    itemId: string
+  }
+  const listViewRows = useMemo((): ListRow[] => {
+    const rows: ListRow[] = []
     for (const cell of cells) {
       if (cell.type !== "furniture" || !cell.items) continue
       for (const fi of cell.items) {
-        const item = fi.item
         rows.push({
-          id: `${selectedClassroomId}-${cell.row}-${cell.col}-${fi.item_id}`,
-          itemId: fi.item_id,
-          name: item?.name || fi.label || "未知物品",
-          category: (item?.category as any)?.name || "-",
-          classroom: selectedClassroom?.name || "-",
-          furniture: cell.label || "未命名家具",
+          key: `${cell.row}-${cell.col}-${fi.item_id}`,
+          name: fi.item?.name || fi.label || "未知物品",
+          category: (fi.item?.category as any)?.name || "-",
+          furniture: cell.label || "未命名",
           furnitureRow: cell.row,
           furnitureCol: cell.col,
-          classroomId: selectedClassroomId,
-          placedQty: fi.quantity,
-          totalQty: item?.quantity || 0,
-          borrowedQty: 0,
-          availableQty: item?.quantity || 0,
-          unit: item?.unit || "",
-          status: item?.status || "available",
-          barcode: item?.barcode || item?.qr_code || "",
+          qty: fi.quantity,
+          totalQty: fi.item?.quantity || 0,
+          unit: fi.item?.unit || "",
+          itemId: fi.item_id,
         })
       }
     }
     return rows
-  }, [cells, selectedClassroomId, selectedClassroom])
-
-  const handleSpreadsheetUpdateQty = useCallback((
-    _classroomId: string, furnitureRow: number, furnitureCol: number,
-    itemId: string, newQty: number
-  ) => {
-    if (newQty <= 0) {
-      // Remove item from furniture
-      setCells(prev => prev.map(c => {
-        if (c.row === furnitureRow && c.col === furnitureCol) {
-          return { ...c, items: (c.items || []).filter(fi => fi.item_id !== itemId) }
-        }
-        return c
-      }))
-    } else {
-      handleUpdateItemQty(furnitureRow, furnitureCol, itemId, newQty)
-    }
-  }, [])
+  }, [cells])
 
   // ---- Data fetching ----
 
@@ -776,9 +918,9 @@ export default function ClassroomPage() {
               variant={classroomViewMode === "spreadsheet" ? "default" : "ghost"}
               size="icon"
               onClick={() => setClassroomViewMode("spreadsheet")}
-              title="試算表"
+              title="物品清單"
             >
-              <Sheet className="w-4 h-4" />
+              <List className="w-4 h-4" />
             </Button>
           </div>
           <Button variant="outline" size="icon" onClick={() => setShowEquipmentList(!showEquipmentList)}>
@@ -818,11 +960,23 @@ export default function ClassroomPage() {
           </CardContent>
         </Card>
       ) : classroomViewMode === "spreadsheet" ? (
-        <SpreadsheetView
-          rows={classroomSpreadsheetRows}
-          isTeacher={isTeacher}
-          onUpdatePlacedQty={handleSpreadsheetUpdateQty}
+        <ClassroomListView
+          rows={listViewRows}
+          classroomName={selectedClassroom?.name || ""}
           searchQuery={searchQuery}
+          isTeacher={isTeacher}
+          onUpdateQty={(fRow, fCol, itemId, qty) => {
+            if (qty <= 0) {
+              setCells(prev => prev.map(c =>
+                c.row === fRow && c.col === fCol
+                  ? { ...c, items: (c.items || []).filter(fi => fi.item_id !== itemId) }
+                  : c
+              ))
+            } else {
+              handleUpdateItemQty(fRow, fCol, itemId, qty)
+            }
+          }}
+          onRemoveItem={(fRow, fCol, itemId) => handleRemoveItemFromFurniture(fRow, fCol, itemId)}
         />
       ) : (
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>

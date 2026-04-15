@@ -2,6 +2,19 @@ import { NextRequest, NextResponse } from "next/server"
 import { adminDb } from "@/lib/firebase-admin"
 import { verifyTeacher } from "@/lib/auth-helper"
 
+function serializeDoc(doc: FirebaseFirestore.DocumentSnapshot) {
+  const data = doc.data()!
+  const result: any = { id: doc.id }
+  for (const [key, val] of Object.entries(data)) {
+    if (val && typeof val === "object" && typeof val.toDate === "function") {
+      result[key] = val.toDate().toISOString()
+    } else {
+      result[key] = val
+    }
+  }
+  return result
+}
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const category = searchParams.get("category")
@@ -14,7 +27,7 @@ export async function GET(request: NextRequest) {
   }
 
   const snapshot = await query.get()
-  let items = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+  let items = snapshot.docs.map(serializeDoc)
 
   // Client-side search filter (Firestore doesn't support ilike)
   if (search) {
@@ -28,7 +41,7 @@ export async function GET(request: NextRequest) {
 
   // Join category data
   const catSnapshot = await adminDb.collection("categories").get()
-  const catMap = new Map(catSnapshot.docs.map((d) => [d.id, { id: d.id, ...d.data() }]))
+  const catMap = new Map(catSnapshot.docs.map((d) => [d.id, serializeDoc(d)]))
 
   items = items.map((item: any) => ({
     ...item,
@@ -61,12 +74,12 @@ export async function POST(request: NextRequest) {
   })
 
   const doc = await docRef.get()
-  const item: any = { id: doc.id, ...doc.data() }
+  const item: any = serializeDoc(doc)
 
   // Join category
   if (item.category_id) {
     const catDoc = await adminDb.collection("categories").doc(item.category_id).get()
-    item.category = catDoc.exists ? { id: catDoc.id, ...catDoc.data() } : null
+    item.category = catDoc.exists ? serializeDoc(catDoc) : null
   }
 
   return NextResponse.json(item)
@@ -83,11 +96,11 @@ export async function PUT(request: NextRequest) {
   await adminDb.collection("items").doc(id).update(updates)
 
   const doc = await adminDb.collection("items").doc(id).get()
-  const item: any = { id: doc.id, ...doc.data() }
+  const item: any = serializeDoc(doc)
 
   if (item.category_id) {
     const catDoc = await adminDb.collection("categories").doc(item.category_id).get()
-    item.category = catDoc.exists ? { id: catDoc.id, ...catDoc.data() } : null
+    item.category = catDoc.exists ? serializeDoc(catDoc) : null
   }
 
   return NextResponse.json(item)

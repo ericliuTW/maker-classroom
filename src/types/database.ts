@@ -181,6 +181,13 @@ export interface Booking {
   project?: Project
 }
 
+/** 設備排程（每項設備可有不同借用時間） */
+export interface EquipmentSchedule {
+  equipment_name: string
+  date: string         // "YYYY-MM-DD"
+  period: number       // 1-8
+}
+
 /** 專案規劃區 */
 export interface ProjectPlan {
   id: string
@@ -191,6 +198,7 @@ export interface ProjectPlan {
   process_steps?: ProcessStep[]
   materials: MaterialItem[]
   equipment: EquipmentItem[]
+  equipment_schedules?: EquipmentSchedule[]  // 設備排程
   status: 'draft' | 'planning' | 'in_progress' | 'completed'
   session_token: string | null
   created_at: string

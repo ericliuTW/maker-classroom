@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from "next/server"
 import { adminDb } from "@/lib/firebase-admin"
 
+function serializeDoc(doc: FirebaseFirestore.DocumentSnapshot) {
+  const data = doc.data()!
+  const result: any = { id: doc.id }
+  for (const [key, val] of Object.entries(data)) {
+    if (val && typeof val === "object" && typeof val.toDate === "function") {
+      result[key] = val.toDate().toISOString()
+    } else {
+      result[key] = val
+    }
+  }
+  return result
+}
+
 export async function POST(request: NextRequest) {
   const body = await request.json()
   const { title, description } = body
@@ -80,7 +93,7 @@ ${knowledgeRef || "（尚無參考專案）"}
 
     const doc = await docRef.get()
     return NextResponse.json({
-      project: { id: doc.id, ...doc.data() },
+      project: serializeDoc(doc),
       parsed,
     })
   } catch (err: any) {

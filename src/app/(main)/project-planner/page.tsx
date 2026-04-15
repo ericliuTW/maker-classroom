@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { useAuthStore } from "@/stores/auth-store"
-import type { ProjectPlan, ProcessStep, MaterialItem, EquipmentItem } from "@/types/database"
+import type { ProjectPlan, ProcessStep, MaterialItem, EquipmentItem, EquipmentSchedule } from "@/types/database"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -17,10 +17,23 @@ import { toast } from "sonner"
 import {
   ClipboardList, Plus, Trash2, ChevronUp, ChevronDown,
   Package, Wrench, CalendarClock, CheckSquare, ArrowLeft,
-  AlertTriangle, GripVertical, Edit2, Check
+  AlertTriangle, GripVertical, Edit2, Check, Key, Calendar
 } from "lucide-react"
 import { format } from "date-fns"
 import { zhTW } from "date-fns/locale"
+
+// ── Period definitions（國高中節次）──────────────────────────────────────────
+
+const PERIODS = [
+  { period: 1, label: "第1節", time: "08:10-09:00" },
+  { period: 2, label: "第2節", time: "09:10-10:00" },
+  { period: 3, label: "第3節", time: "10:10-11:00" },
+  { period: 4, label: "第4節", time: "11:10-12:00" },
+  { period: 5, label: "午休",  time: "12:00-13:00" },
+  { period: 6, label: "第5節", time: "13:10-14:00" },
+  { period: 7, label: "第6節", time: "14:10-15:00" },
+  { period: 8, label: "第7節", time: "15:10-16:00" },
+]
 
 // ── Status config ──────────────────────────────────────────────────────────────
 
@@ -141,7 +154,13 @@ export default function ProjectPlannerPage() {
                 {plan.description && (
                   <p className="text-sm text-muted-foreground line-clamp-2">{plan.description}</p>
                 )}
-                <div className="flex gap-3 text-xs text-muted-foreground">
+                <div className="flex gap-3 text-xs text-muted-foreground flex-wrap">
+                  {plan.session_token && (
+                    <span className="flex items-center gap-1 text-indigo-600">
+                      <Key className="w-3 h-3" />
+                      {plan.session_token.slice(0, 8)}…
+                    </span>
+                  )}
                   {plan.materials.length > 0 && (
                     <span className="flex items-center gap-1">
                       <Package className="w-3 h-3" />
@@ -152,6 +171,12 @@ export default function ProjectPlannerPage() {
                     <span className="flex items-center gap-1">
                       <Wrench className="w-3 h-3" />
                       設備 {plan.equipment.length} 項
+                    </span>
+                  )}
+                  {plan.equipment_schedules && plan.equipment_schedules.length > 0 && (
+                    <span className="flex items-center gap-1 text-green-600">
+                      <Calendar className="w-3 h-3" />
+                      已排 {plan.equipment_schedules.length} 節
                     </span>
                   )}
                   {plan.process_steps && plan.process_steps.length > 0 && (
@@ -394,6 +419,19 @@ function PlanDetailView({
         )}
       </div>
 
+      {/* Access code */}
+      {plan.session_token && (
+        <Card className="bg-indigo-50/60 border-indigo-200">
+          <CardContent className="py-3 px-4 flex items-center gap-3">
+            <Key className="w-4 h-4 text-indigo-500 shrink-0" />
+            <div>
+              <span className="text-xs font-medium text-indigo-600">使用代碼</span>
+              <p className="text-sm font-mono font-bold text-indigo-900">{plan.session_token}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Separator />
 
       {/* Description & Objectives */}
@@ -433,6 +471,19 @@ function PlanDetailView({
         equipment={plan.equipment}
         onSave={equipment => save({ equipment })}
       />
+
+      {/* Equipment Scheduling */}
+      {plan.equipment.filter(e => e.name).length > 0 && (
+        <>
+          <Separator />
+          <EquipmentScheduler
+            equipment={plan.equipment}
+            schedules={plan.equipment_schedules || []}
+            planId={plan.id}
+            onSave={schedules => save({ equipment_schedules: schedules })}
+          />
+        </>
+      )}
 
       {/* Pickup summary */}
       {(plan.materials.some(m => !m.in_classroom) || plan.equipment.some(e => !e.in_classroom)) && (
@@ -750,6 +801,198 @@ function EquipmentEditor({ equipment, onSave }: {
             </Button>
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Equipment scheduler ───────────────────────────────────────────────────────
+
+interface OccupiedSlot {
+  equipment_name: string
+  date: string
+  period: number
+  project_plan_id: string
+  plan_title: string
+}
+
+function EquipmentScheduler({
+  equipment, schedules, planId, onSave,
+}: {
+  equipment: EquipmentItem[]
+  schedules: EquipmentSchedule[]
+  planId: string
+  onSave: (s: EquipmentSchedule[]) => void
+}) {
+  const [local, setLocal] = useState<EquipmentSchedule[]>(schedules)
+  const [occupied, setOccupied] = useState<OccupiedSlot[]>([])
+  const [loadingAvail, setLoadingAvail] = useState(false)
+
+  // Date state for date input (shared for quick use)
+  const today = new Date().toISOString().slice(0, 10)
+
+  useEffect(() => { setLocal(schedules) }, [schedules])
+
+  // Fetch occupied slots whenever local dates change
+  const activeDates = [...new Set(local.map(s => s.date).filter(Boolean))]
+
+  useEffect(() => {
+    async function fetchAvailability() {
+      if (activeDates.length === 0) {
+        // Fetch next 14 days by default
+        const from = today
+        const to = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10)
+        setLoadingAvail(true)
+        try {
+          const res = await fetch(`/api/equipment/availability?from=${from}&to=${to}&exclude_plan_id=${planId}`)
+          const data = await res.json()
+          setOccupied(data.slots || [])
+        } catch { /* ignore */ }
+        setLoadingAvail(false)
+        return
+      }
+
+      // Fetch for specific dates
+      setLoadingAvail(true)
+      try {
+        const allSlots: OccupiedSlot[] = []
+        for (const date of activeDates) {
+          const res = await fetch(`/api/equipment/availability?date=${date}&exclude_plan_id=${planId}`)
+          const data = await res.json()
+          allSlots.push(...(data.slots || []))
+        }
+        setOccupied(allSlots)
+      } catch { /* ignore */ }
+      setLoadingAvail(false)
+    }
+    fetchAvailability()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDates.join(","), planId])
+
+  const isSlotOccupied = (equipName: string, date: string, period: number) => {
+    return occupied.some(s =>
+      s.equipment_name === equipName && s.date === date && s.period === period
+    )
+  }
+
+  const getSlotInfo = (equipName: string, date: string, period: number) => {
+    return occupied.find(s =>
+      s.equipment_name === equipName && s.date === date && s.period === period
+    )
+  }
+
+  // Get schedules for a specific equipment
+  const getEquipSchedules = (name: string) => local.filter(s => s.equipment_name === name)
+
+  const addSchedule = (equipName: string) => {
+    const newSched: EquipmentSchedule = { equipment_name: equipName, date: today, period: 1 }
+    const updated = [...local, newSched]
+    setLocal(updated)
+    onSave(updated)
+  }
+
+  const updateSchedule = (idx: number, field: "date" | "period", val: string | number) => {
+    const updated = local.map((s, i) => i === idx ? { ...s, [field]: val } : s)
+    setLocal(updated)
+    onSave(updated)
+  }
+
+  const removeSchedule = (idx: number) => {
+    const updated = local.filter((_, i) => i !== idx)
+    setLocal(updated)
+    onSave(updated)
+  }
+
+  const namedEquipment = equipment.filter(e => e.name.trim())
+
+  return (
+    <div className="space-y-3">
+      <Label className="text-sm font-semibold flex items-center gap-2">
+        <CalendarClock className="w-4 h-4" />
+        待排程
+        {loadingAvail && <span className="text-xs text-muted-foreground font-normal">（檢查中...）</span>}
+      </Label>
+      <p className="text-xs text-muted-foreground -mt-1">
+        為每項設備選擇借用日期和節數。已被其他專案佔用的時段會標示為不可選。
+      </p>
+
+      <div className="space-y-4">
+        {namedEquipment.map((eq) => {
+          const eqSchedules = getEquipSchedules(eq.name)
+          return (
+            <Card key={eq.name} className="border-blue-200/60">
+              <CardHeader className="pb-2 pt-3 px-4">
+                <CardTitle className="text-sm flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Wrench className="w-3.5 h-3.5 text-blue-500" />
+                    {eq.name}
+                  </span>
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => addSchedule(eq.name)}>
+                    <Plus className="w-3 h-3 mr-1" />
+                    新增時段
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="px-4 pb-3 space-y-2">
+                {eqSchedules.length === 0 && (
+                  <p className="text-xs text-muted-foreground text-center py-2">尚未排程</p>
+                )}
+                {eqSchedules.map((sched) => {
+                  // Find the real index in the full local array
+                  const realIdx = local.indexOf(sched)
+                  return (
+                    <div key={realIdx} className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                      {/* Date */}
+                      <Input
+                        type="date"
+                        value={sched.date}
+                        onChange={e => updateSchedule(realIdx, "date", e.target.value)}
+                        min={today}
+                        className="w-[150px] text-sm h-8"
+                      />
+                      {/* Period selector */}
+                      <div className="flex gap-1 flex-wrap flex-1">
+                        {PERIODS.map(p => {
+                          const isOcc = isSlotOccupied(eq.name, sched.date, p.period)
+                          const isSelected = sched.period === p.period
+                          const slotInfo = isOcc ? getSlotInfo(eq.name, sched.date, p.period) : null
+                          return (
+                            <button
+                              key={p.period}
+                              disabled={isOcc}
+                              onClick={() => {
+                                if (!isOcc) updateSchedule(realIdx, "period", p.period)
+                              }}
+                              title={isOcc
+                                ? `已被「${slotInfo?.plan_title}」佔用`
+                                : `${p.label} ${p.time}`
+                              }
+                              className={`
+                                px-2 py-1 rounded text-[11px] border transition-colors
+                                ${isSelected
+                                  ? "bg-blue-600 text-white border-blue-600"
+                                  : isOcc
+                                    ? "bg-red-50 text-red-300 border-red-200 cursor-not-allowed line-through"
+                                    : "bg-white hover:bg-blue-50 border-gray-200 cursor-pointer"
+                                }
+                              `}
+                            >
+                              {p.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {/* Remove */}
+                      <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-destructive hover:text-destructive" onClick={() => removeSchedule(realIdx)}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  )
+                })}
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
     </div>
   )

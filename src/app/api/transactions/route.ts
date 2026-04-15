@@ -3,6 +3,19 @@ import { adminDb } from "@/lib/firebase-admin"
 import { verifyTeacher } from "@/lib/auth-helper"
 import { FieldValue } from "firebase-admin/firestore"
 
+function serializeDoc(doc: FirebaseFirestore.DocumentSnapshot) {
+  const data = doc.data()!
+  const result: any = { id: doc.id }
+  for (const [key, val] of Object.entries(data)) {
+    if (val && typeof val === "object" && typeof val.toDate === "function") {
+      result[key] = val.toDate().toISOString()
+    } else {
+      result[key] = val
+    }
+  }
+  return result
+}
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const type = searchParams.get("type")
@@ -21,7 +34,7 @@ export async function GET(request: NextRequest) {
   }
 
   const snapshot = await query.get()
-  const transactions = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+  const transactions = snapshot.docs.map(serializeDoc)
 
   // Join item data
   const itemIds = [...new Set(transactions.map((t: any) => t.item_id).filter(Boolean))]
@@ -29,7 +42,7 @@ export async function GET(request: NextRequest) {
   for (const itemId of itemIds) {
     const itemDoc = await adminDb.collection("items").doc(itemId).get()
     if (itemDoc.exists) {
-      itemMap.set(itemId, { id: itemDoc.id, ...itemDoc.data() })
+      itemMap.set(itemId, serializeDoc(itemDoc))
     }
   }
 
@@ -79,9 +92,9 @@ export async function POST(request: NextRequest) {
   }
 
   const doc = await docRef.get()
-  const transaction: any = { id: doc.id, ...doc.data() }
+  const transaction: any = serializeDoc(doc)
   const itemData = await itemRef.get()
-  transaction.item = itemData.exists ? { id: itemData.id, ...itemData.data() } : null
+  transaction.item = itemData.exists ? serializeDoc(itemData) : null
 
   return NextResponse.json(transaction)
 }
@@ -97,5 +110,5 @@ export async function PATCH(request: NextRequest) {
 
   await adminDb.collection("transactions").doc(body.id).update(updates)
   const doc = await adminDb.collection("transactions").doc(body.id).get()
-  return NextResponse.json({ id: doc.id, ...doc.data() })
+  return NextResponse.json(serializeDoc(doc))
 }

@@ -2,6 +2,19 @@ import { NextRequest, NextResponse } from "next/server"
 import { adminDb } from "@/lib/firebase-admin"
 import { verifyTeacher } from "@/lib/auth-helper"
 
+function serializeDoc(doc: FirebaseFirestore.DocumentSnapshot) {
+  const data = doc.data()!
+  const result: any = { id: doc.id }
+  for (const [key, val] of Object.entries(data)) {
+    if (val && typeof val === "object" && typeof val.toDate === "function") {
+      result[key] = val.toDate().toISOString()
+    } else {
+      result[key] = val
+    }
+  }
+  return result
+}
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const search = searchParams.get("search")
@@ -19,7 +32,7 @@ export async function GET(request: NextRequest) {
   }
 
   const snapshot = await query.get()
-  let entries = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+  let entries = snapshot.docs.map(serializeDoc)
 
   if (search) {
     const s = search.toLowerCase()
@@ -56,7 +69,7 @@ export async function POST(request: NextRequest) {
   })
 
   const doc = await docRef.get()
-  return NextResponse.json({ id: doc.id, ...doc.data() })
+  return NextResponse.json(serializeDoc(doc))
 }
 
 export async function DELETE(request: NextRequest) {
