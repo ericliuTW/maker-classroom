@@ -466,24 +466,14 @@ function PlanDetailView({
 
       <Separator />
 
-      {/* Equipment */}
-      <EquipmentEditor
+      {/* Equipment (unified: picker + inline scheduler) */}
+      <EquipmentSection
         equipment={plan.equipment}
-        onSave={equipment => save({ equipment })}
+        schedules={plan.equipment_schedules || []}
+        planId={plan.id}
+        onSaveEquipment={equipment => save({ equipment })}
+        onSaveSchedules={schedules => save({ equipment_schedules: schedules })}
       />
-
-      {/* Equipment Scheduling */}
-      {plan.equipment.filter(e => e.name).length > 0 && (
-        <>
-          <Separator />
-          <EquipmentScheduler
-            equipment={plan.equipment}
-            schedules={plan.equipment_schedules || []}
-            planId={plan.id}
-            onSave={schedules => save({ equipment_schedules: schedules })}
-          />
-        </>
-      )}
 
       {/* Pickup summary */}
       {(plan.materials.some(m => !m.in_classroom) || plan.equipment.some(e => !e.in_classroom)) && (
@@ -728,85 +718,7 @@ function MaterialsEditor({ materials, onSave }: {
   )
 }
 
-// ── Equipment editor ───────────────────────────────────────────────────────────
-
-function EquipmentEditor({ equipment, onSave }: {
-  equipment: EquipmentItem[]; onSave: (e: EquipmentItem[]) => void
-}) {
-  const [local, setLocal] = useState<EquipmentItem[]>(equipment)
-
-  useEffect(() => { setLocal(equipment) }, [equipment])
-
-  const update = (newList: EquipmentItem[]) => {
-    setLocal(newList)
-    onSave(newList)
-  }
-
-  const add = () => update([...local, { name: "", in_classroom: false }])
-
-  const change = (idx: number, field: keyof EquipmentItem, val: any) => {
-    const newList = local.map((e, i) => i === idx ? { ...e, [field]: val } : e)
-    setLocal(newList)
-  }
-
-  const blur = () => onSave(local)
-
-  const remove = (idx: number) => update(local.filter((_, i) => i !== idx))
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <Label className="text-sm font-semibold flex items-center gap-2">
-          <Wrench className="w-4 h-4" />
-          設備清單
-        </Label>
-        <Button size="sm" variant="outline" onClick={add}>
-          <Plus className="w-3 h-3 mr-1" />
-          新增設備
-        </Button>
-      </div>
-
-      {local.length === 0 && (
-        <p className="text-sm text-muted-foreground py-4 text-center">尚未新增設備</p>
-      )}
-
-      <div className="space-y-2">
-        {local.map((eq, idx) => (
-          <div key={idx} className="flex items-center gap-2">
-            <Input
-              value={eq.name}
-              onChange={e => change(idx, "name", e.target.value)}
-              onBlur={blur}
-              placeholder="設備名稱（例：烙鐵、3D 印表機）"
-              className="flex-1"
-            />
-            <Input
-              value={eq.note || ""}
-              onChange={e => change(idx, "note", e.target.value)}
-              onBlur={blur}
-              placeholder="備註"
-              className="w-32 hidden sm:block"
-            />
-            <label className="flex items-center gap-1 text-xs whitespace-nowrap cursor-pointer">
-              <input
-                type="checkbox"
-                checked={eq.in_classroom}
-                onChange={e => { change(idx, "in_classroom", e.target.checked); setTimeout(blur, 0) }}
-                className="w-4 h-4"
-              />
-              教室有
-            </label>
-            <Button size="icon" variant="ghost" onClick={() => remove(idx)} className="text-destructive hover:text-destructive shrink-0">
-              <Trash2 className="w-4 h-4" />
-            </Button>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// ── Equipment scheduler ───────────────────────────────────────────────────────
+// ── Equipment Section (unified: picker + inline week-calendar scheduler) ──────
 
 interface OccupiedSlot {
   equipment_name: string
@@ -816,184 +728,321 @@ interface OccupiedSlot {
   plan_title: string
 }
 
-function EquipmentScheduler({
-  equipment, schedules, planId, onSave,
+function EquipmentSection({
+  equipment, schedules, planId, onSaveEquipment, onSaveSchedules,
 }: {
   equipment: EquipmentItem[]
   schedules: EquipmentSchedule[]
   planId: string
-  onSave: (s: EquipmentSchedule[]) => void
+  onSaveEquipment: (e: EquipmentItem[]) => void
+  onSaveSchedules: (s: EquipmentSchedule[]) => void
 }) {
-  const [local, setLocal] = useState<EquipmentSchedule[]>(schedules)
-  const [occupied, setOccupied] = useState<OccupiedSlot[]>([])
-  const [loadingAvail, setLoadingAvail] = useState(false)
+  type InvItem = { id: string; name: string; quantity: number; unit: string; category?: { name: string } }
 
-  // Date state for date input (shared for quick use)
+  const [localEq, setLocalEq] = useState<EquipmentItem[]>(equipment)
+  const [localSched, setLocalSched] = useState<EquipmentSchedule[]>(schedules)
+  const [inventoryItems, setInventoryItems] = useState<InvItem[]>([])
+  const [pickerOpenIdx, setPickerOpenIdx] = useState<number | null>(null)
+  const [pickerSearch, setPickerSearch] = useState("")
+  const [customName, setCustomName] = useState("")
+  const [customLocation, setCustomLocation] = useState("")
+  const [expandedSet, setExpandedSet] = useState<Set<number>>(new Set())
+  const [occupied, setOccupied] = useState<OccupiedSlot[]>([])
+  const [weekOffset, setWeekOffset] = useState(0)
+
   const today = new Date().toISOString().slice(0, 10)
 
-  useEffect(() => { setLocal(schedules) }, [schedules])
+  useEffect(() => { setLocalEq(equipment) }, [equipment])
+  useEffect(() => { setLocalSched(schedules) }, [schedules])
 
-  // Fetch occupied slots whenever local dates change
-  const activeDates = [...new Set(local.map(s => s.date).filter(Boolean))]
-
+  // Fetch inventory items
   useEffect(() => {
-    async function fetchAvailability() {
-      if (activeDates.length === 0) {
-        // Fetch next 14 days by default
-        const from = today
-        const to = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10)
-        setLoadingAvail(true)
-        try {
-          const res = await fetch(`/api/equipment/availability?from=${from}&to=${to}&exclude_plan_id=${planId}`)
-          const data = await res.json()
-          setOccupied(data.slots || [])
-        } catch { /* ignore */ }
-        setLoadingAvail(false)
-        return
-      }
+    fetch("/api/items").then(r => r.json())
+      .then(d => setInventoryItems(Array.isArray(d) ? d : []))
+      .catch(() => {})
+  }, [])
 
-      // Fetch for specific dates
-      setLoadingAvail(true)
-      try {
-        const allSlots: OccupiedSlot[] = []
-        for (const date of activeDates) {
-          const res = await fetch(`/api/equipment/availability?date=${date}&exclude_plan_id=${planId}`)
-          const data = await res.json()
-          allSlots.push(...(data.slots || []))
-        }
-        setOccupied(allSlots)
-      } catch { /* ignore */ }
-      setLoadingAvail(false)
-    }
-    fetchAvailability()
+  // Fetch availability (next 4 weeks)
+  useEffect(() => {
+    const from = today
+    const to = new Date(Date.now() + 28 * 86400000).toISOString().slice(0, 10)
+    fetch(`/api/equipment/availability?from=${from}&to=${to}&exclude_plan_id=${planId}`)
+      .then(r => r.json()).then(d => setOccupied(d.slots || [])).catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDates.join(","), planId])
+  }, [planId])
 
-  const isSlotOccupied = (equipName: string, date: string, period: number) => {
-    return occupied.some(s =>
-      s.equipment_name === equipName && s.date === date && s.period === period
+  // Week days
+  const weekDays = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date()
+    d.setDate(d.getDate() + weekOffset * 7 + i)
+    return d.toISOString().slice(0, 10)
+  })
+  const DAY_LABELS = ["日", "一", "二", "三", "四", "五", "六"]
+
+  const isOccupied = (name: string, date: string, period: number) =>
+    occupied.some(s => s.equipment_name === name && s.date === date && s.period === period)
+  const isSelected = (name: string, date: string, period: number) =>
+    localSched.some(s => s.equipment_name === name && s.date === date && s.period === period)
+  const getOccInfo = (name: string, date: string, period: number) =>
+    occupied.find(s => s.equipment_name === name && s.date === date && s.period === period)
+
+  const toggleSlot = (name: string, date: string, period: number) => {
+    if (isOccupied(name, date, period)) return
+    const updated = isSelected(name, date, period)
+      ? localSched.filter(s => !(s.equipment_name === name && s.date === date && s.period === period))
+      : [...localSched, { equipment_name: name, date, period }]
+    setLocalSched(updated); onSaveSchedules(updated)
+  }
+
+  const toggleExpand = (idx: number) => {
+    setExpandedSet(prev => {
+      const next = new Set(prev)
+      next.has(idx) ? next.delete(idx) : next.add(idx)
+      return next
+    })
+  }
+
+  const openPicker = (idx: number) => {
+    setPickerOpenIdx(idx); setPickerSearch(""); setCustomName(""); setCustomLocation("")
+  }
+
+  const addEquipment = () => {
+    const newEq = [...localEq, { name: "", in_classroom: false }]
+    setLocalEq(newEq); onSaveEquipment(newEq)
+    openPicker(newEq.length - 1)
+  }
+
+  const removeEquipment = (idx: number) => {
+    const name = localEq[idx]?.name
+    const newEq = localEq.filter((_, i) => i !== idx)
+    const newSched = name ? localSched.filter(s => s.equipment_name !== name) : localSched
+    setLocalEq(newEq); setLocalSched(newSched)
+    onSaveEquipment(newEq); onSaveSchedules(newSched)
+  }
+
+  const selectFromInventory = (item: InvItem) => {
+    if (pickerOpenIdx === null) return
+    const newEq = localEq.map((e, i) =>
+      i === pickerOpenIdx ? { ...e, name: item.name, item_id: item.id, in_classroom: true } : e
     )
+    setLocalEq(newEq); onSaveEquipment(newEq)
+    setExpandedSet(prev => new Set([...prev, pickerOpenIdx]))
+    setPickerOpenIdx(null)
   }
 
-  const getSlotInfo = (equipName: string, date: string, period: number) => {
-    return occupied.find(s =>
-      s.equipment_name === equipName && s.date === date && s.period === period
+  const selectCustom = () => {
+    if (!customName.trim() || pickerOpenIdx === null) return
+    const newEq = localEq.map((e, i) =>
+      i === pickerOpenIdx ? { ...e, name: customName.trim(), note: customLocation.trim() || e.note, in_classroom: false } : e
     )
+    setLocalEq(newEq); onSaveEquipment(newEq)
+    setExpandedSet(prev => new Set([...prev, pickerOpenIdx]))
+    setPickerOpenIdx(null)
   }
-
-  // Get schedules for a specific equipment
-  const getEquipSchedules = (name: string) => local.filter(s => s.equipment_name === name)
-
-  const addSchedule = (equipName: string) => {
-    const newSched: EquipmentSchedule = { equipment_name: equipName, date: today, period: 1 }
-    const updated = [...local, newSched]
-    setLocal(updated)
-    onSave(updated)
-  }
-
-  const updateSchedule = (idx: number, field: "date" | "period", val: string | number) => {
-    const updated = local.map((s, i) => i === idx ? { ...s, [field]: val } : s)
-    setLocal(updated)
-    onSave(updated)
-  }
-
-  const removeSchedule = (idx: number) => {
-    const updated = local.filter((_, i) => i !== idx)
-    setLocal(updated)
-    onSave(updated)
-  }
-
-  const namedEquipment = equipment.filter(e => e.name.trim())
 
   return (
     <div className="space-y-3">
-      <Label className="text-sm font-semibold flex items-center gap-2">
-        <CalendarClock className="w-4 h-4" />
-        待排程
-        {loadingAvail && <span className="text-xs text-muted-foreground font-normal">（檢查中...）</span>}
-      </Label>
-      <p className="text-xs text-muted-foreground -mt-1">
-        為每項設備選擇借用日期和節數。已被其他專案佔用的時段會標示為不可選。
-      </p>
+      <div className="flex items-center justify-between">
+        <Label className="text-sm font-semibold flex items-center gap-2">
+          <Wrench className="w-4 h-4" />設備清單
+        </Label>
+        <Button size="sm" variant="outline" onClick={addEquipment}>
+          <Plus className="w-3 h-3 mr-1" />新增設備
+        </Button>
+      </div>
 
-      <div className="space-y-4">
-        {namedEquipment.map((eq) => {
-          const eqSchedules = getEquipSchedules(eq.name)
+      {localEq.length === 0 && (
+        <p className="text-sm text-muted-foreground py-4 text-center">尚未新增設備，點擊「新增設備」開始</p>
+      )}
+
+      <div className="space-y-2">
+        {localEq.map((eq, idx) => {
+          const hasName = eq.name.trim().length > 0
+          const isExpanded = expandedSet.has(idx)
+          const mySchedules = localSched.filter(s => s.equipment_name === eq.name)
+
           return (
-            <Card key={eq.name} className="border-blue-200/60">
-              <CardHeader className="pb-2 pt-3 px-4">
-                <CardTitle className="text-sm flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    <Wrench className="w-3.5 h-3.5 text-blue-500" />
-                    {eq.name}
-                  </span>
-                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => addSchedule(eq.name)}>
-                    <Plus className="w-3 h-3 mr-1" />
-                    新增時段
-                  </Button>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="px-4 pb-3 space-y-2">
-                {eqSchedules.length === 0 && (
-                  <p className="text-xs text-muted-foreground text-center py-2">尚未排程</p>
-                )}
-                {eqSchedules.map((sched) => {
-                  // Find the real index in the full local array
-                  const realIdx = local.indexOf(sched)
-                  return (
-                    <div key={realIdx} className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                      {/* Date */}
-                      <Input
-                        type="date"
-                        value={sched.date}
-                        onChange={e => updateSchedule(realIdx, "date", e.target.value)}
-                        min={today}
-                        className="w-[150px] text-sm h-8"
-                      />
-                      {/* Period selector */}
-                      <div className="flex gap-1 flex-wrap flex-1">
-                        {PERIODS.map(p => {
-                          const isOcc = isSlotOccupied(eq.name, sched.date, p.period)
-                          const isSelected = sched.period === p.period
-                          const slotInfo = isOcc ? getSlotInfo(eq.name, sched.date, p.period) : null
-                          return (
-                            <button
-                              key={p.period}
-                              disabled={isOcc}
-                              onClick={() => {
-                                if (!isOcc) updateSchedule(realIdx, "period", p.period)
-                              }}
-                              title={isOcc
-                                ? `已被「${slotInfo?.plan_title}」佔用`
-                                : `${p.label} ${p.time}`
-                              }
-                              className={`
-                                px-2 py-1 rounded text-[11px] border transition-colors
-                                ${isSelected
-                                  ? "bg-blue-600 text-white border-blue-600"
-                                  : isOcc
-                                    ? "bg-red-50 text-red-300 border-red-200 cursor-not-allowed line-through"
-                                    : "bg-white hover:bg-blue-50 border-gray-200 cursor-pointer"
-                                }
-                              `}
-                            >
-                              {p.label}
-                            </button>
-                          )
-                        })}
-                      </div>
-                      {/* Remove */}
-                      <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-destructive hover:text-destructive" onClick={() => removeSchedule(realIdx)}>
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
+            <div key={idx} className="border rounded-lg overflow-hidden">
+              {/* Row header */}
+              <div className="flex items-center gap-2 px-3 py-2 bg-muted/30">
+                <button
+                  className={`flex-1 flex items-center gap-2 text-left rounded px-2 py-1.5 min-w-0 transition-colors
+                    ${hasName ? "hover:bg-muted" : "border border-dashed border-primary/40 bg-primary/5 hover:bg-primary/10"}`}
+                  onClick={() => openPicker(idx)}
+                >
+                  <Wrench className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  {hasName ? (
+                    <div className="min-w-0 flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium">{eq.name}</span>
+                      {eq.note && <span className="text-xs text-muted-foreground">{eq.note}</span>}
                     </div>
-                  )
-                })}
-              </CardContent>
-            </Card>
+                  ) : (
+                    <span className="text-sm text-muted-foreground italic">點選選擇設備...</span>
+                  )}
+                </button>
+
+                <label className="flex items-center gap-1 text-xs whitespace-nowrap cursor-pointer select-none shrink-0">
+                  <input type="checkbox" checked={eq.in_classroom} className="w-4 h-4 accent-primary"
+                    onChange={e => {
+                      const newEq = localEq.map((x, i) => i === idx ? { ...x, in_classroom: e.target.checked } : x)
+                      setLocalEq(newEq); onSaveEquipment(newEq)
+                    }} />
+                  教室有
+                </label>
+
+                {hasName && (
+                  <button
+                    onClick={() => toggleExpand(idx)}
+                    className={`flex items-center gap-1 text-xs px-2 py-1 rounded border whitespace-nowrap shrink-0 transition-colors
+                      ${isExpanded ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-background border-border text-muted-foreground hover:bg-muted"}`}
+                  >
+                    <CalendarClock className="w-3 h-3" />
+                    {mySchedules.length > 0 ? `已排 ${mySchedules.length} 節` : "排程"}
+                  </button>
+                )}
+
+                <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-destructive hover:text-destructive"
+                  onClick={() => removeEquipment(idx)}>
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+
+              {/* Inline week-calendar schedule panel */}
+              {isExpanded && hasName && (
+                <div className="border-t px-3 py-3 space-y-2 bg-background">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-xs text-muted-foreground">綠色可借用，點擊排程；藍色已排；紅色已被佔用</span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button className="text-xs px-2 py-1 rounded border hover:bg-muted transition-colors"
+                        onClick={() => setWeekOffset(w => w - 1)}>‹ 上週</button>
+                      <span className="text-[11px] text-muted-foreground px-1 whitespace-nowrap">
+                        {weekDays[0].slice(5)} ~ {weekDays[6].slice(5)}
+                      </span>
+                      <button className="text-xs px-2 py-1 rounded border hover:bg-muted transition-colors"
+                        onClick={() => setWeekOffset(w => w + 1)}>下週 ›</button>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="text-[11px] border-collapse w-full">
+                      <thead>
+                        <tr>
+                          <th className="p-1 w-10 text-left text-muted-foreground font-normal">節次</th>
+                          {weekDays.map(date => {
+                            const d = new Date(date + "T12:00:00")
+                            const isToday = date === today
+                            return (
+                              <th key={date} className={`p-1 text-center min-w-[38px] ${isToday ? "text-blue-600" : ""}`}>
+                                <div className="font-medium">{date.slice(5)}</div>
+                                <div className="text-muted-foreground font-normal">{DAY_LABELS[d.getDay()]}</div>
+                              </th>
+                            )
+                          })}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {PERIODS.map(p => (
+                          <tr key={p.period}>
+                            <td className="p-1 text-muted-foreground border-b text-center whitespace-nowrap">{p.label}</td>
+                            {weekDays.map(date => {
+                              const occ = isOccupied(eq.name, date, p.period)
+                              const sel = isSelected(eq.name, date, p.period)
+                              const isPast = date < today
+                              const info = occ ? getOccInfo(eq.name, date, p.period) : null
+                              return (
+                                <td key={date} className="p-0.5 border-b">
+                                  <button
+                                    disabled={occ || isPast}
+                                    onClick={() => toggleSlot(eq.name, date, p.period)}
+                                    title={
+                                      occ ? `已被「${info?.plan_title}」佔用` :
+                                      sel ? `${p.label} 已排程（點擊取消）` :
+                                      isPast ? "過去日期" :
+                                      `${p.label} ${p.time} — 點擊排程`
+                                    }
+                                    className={`w-full h-6 rounded border text-[10px] font-bold transition-colors
+                                      ${sel ? "bg-blue-500 text-white border-blue-500" :
+                                        occ ? "bg-red-50 text-red-300 border-red-200 cursor-not-allowed" :
+                                        isPast ? "bg-gray-50 border-gray-100 cursor-not-allowed" :
+                                        "bg-green-50 hover:bg-green-200 border-green-200 cursor-pointer"
+                                      }`}
+                                  >
+                                    {sel ? "✓" : occ ? "✗" : ""}
+                                  </button>
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
           )
         })}
       </div>
+
+      {/* Inventory picker dialog */}
+      <Dialog open={pickerOpenIdx !== null} onOpenChange={open => { if (!open) setPickerOpenIdx(null) }}>
+        <DialogContent className="max-w-md flex flex-col" style={{ maxHeight: "78vh" }}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wrench className="w-4 h-4" />選擇設備
+            </DialogTitle>
+          </DialogHeader>
+
+          <Input placeholder="搜尋庫存設備名稱..." value={pickerSearch}
+            onChange={e => setPickerSearch(e.target.value)} className="shrink-0" autoFocus />
+
+          {/* Inventory list */}
+          <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
+            {inventoryItems
+              .filter(item => !pickerSearch.trim() || item.name.toLowerCase().includes(pickerSearch.toLowerCase()))
+              .map(item => {
+                const alreadyAdded = localEq.some((e, i) => i !== pickerOpenIdx && e.name === item.name)
+                return (
+                  <button key={item.id} disabled={alreadyAdded}
+                    onClick={() => selectFromInventory(item)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors
+                      ${alreadyAdded
+                        ? "opacity-40 cursor-not-allowed bg-muted"
+                        : "hover:bg-primary/5 hover:border-primary cursor-pointer"}`}
+                  >
+                    <Wrench className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">{item.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {(item.category as any)?.name || "未分類"} · 庫存 {item.quantity}{item.unit}
+                      </p>
+                    </div>
+                    {alreadyAdded && <Badge variant="outline" className="text-xs shrink-0">已加入</Badge>}
+                  </button>
+                )
+              })}
+            {inventoryItems.filter(i =>
+              !pickerSearch.trim() || i.name.toLowerCase().includes(pickerSearch.toLowerCase())
+            ).length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">庫存中找不到符合設備</p>
+            )}
+          </div>
+
+          {/* Custom equipment section */}
+          <div className="border-t pt-3 space-y-2 shrink-0">
+            <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
+              <Plus className="w-3 h-3" />自訂設備（庫存以外）
+            </p>
+            <Input placeholder="設備名稱（必填）" value={customName}
+              onChange={e => setCustomName(e.target.value)} className="h-8 text-sm" />
+            <Input placeholder="使用場地（選填，例：理化實驗室）" value={customLocation}
+              onChange={e => setCustomLocation(e.target.value)} className="h-8 text-sm" />
+            <Button size="sm" className="w-full h-8" disabled={!customName.trim()} onClick={selectCustom}>
+              <Check className="w-3 h-3 mr-1" />確認新增自訂設備
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -522,6 +522,10 @@ export default function ClassroomPage() {
   const [showEquipmentList, setShowEquipmentList] = useState(false)
   const [addItemQty, setAddItemQty] = useState(1)
   const [classroomViewMode, setClassroomViewMode] = useState<"grid" | "spreadsheet">("grid")
+  // Add items dialog
+  const [addItemsDialogOpen, setAddItemsDialogOpen] = useState(false)
+  const [addItemsSearch, setAddItemsSearch] = useState("")
+  const [itemSelections, setItemSelections] = useState<Record<string, number>>({}) // itemId -> qty
 
   const selectedClassroom = classrooms.find(c => c.id === selectedClassroomId)
   const selectedVersion = versions.find(v => v.id === selectedVersionId)
@@ -689,6 +693,83 @@ export default function ClassroomPage() {
       }))
       toast.success(`已將 ${item.name} 放入 ${furnitureCell.label}`)
     }
+  }
+
+  // ---- Add Items Dialog ----
+
+  const handleOpenAddItems = () => {
+    // Pre-populate selections with items already in the furniture
+    const init: Record<string, number> = {}
+    selectedFurniture?.items?.forEach(fi => { init[fi.item_id] = fi.quantity })
+    setItemSelections(init)
+    setAddItemsSearch("")
+    setAddItemsDialogOpen(true)
+  }
+
+  const handleToggleItem = (itemId: string) => {
+    setItemSelections(prev => {
+      if (prev[itemId]) {
+        const next = { ...prev }
+        delete next[itemId]
+        return next
+      }
+      return { ...prev, [itemId]: 1 }
+    })
+  }
+
+  const handleAdjustQty = (itemId: string, delta: number) => {
+    setItemSelections(prev => {
+      const current = prev[itemId] || 1
+      const next = Math.max(1, current + delta)
+      return { ...prev, [itemId]: next }
+    })
+  }
+
+  const handleConfirmAddItems = () => {
+    if (!selectedFurniture) return
+    const selected = Object.entries(itemSelections)
+    if (selected.length === 0) return
+    setCells(prev => prev.map(c => {
+      if (c.row !== selectedFurniture.row || c.col !== selectedFurniture.col) return c
+      let updatedItems = [...(c.items || [])]
+      for (const [itemId, qty] of selected) {
+        const item = items.find(i => i.id === itemId)
+        if (!item) continue
+        const existingIdx = updatedItems.findIndex(fi => fi.item_id === itemId)
+        if (existingIdx >= 0) {
+          updatedItems[existingIdx] = { ...updatedItems[existingIdx], quantity: qty }
+        } else {
+          updatedItems.push({ item_id: itemId, quantity: qty, label: item.name, item })
+        }
+      }
+      // Remove items that were deselected (existed before but not in current selections)
+      const selectedIds = new Set(Object.keys(itemSelections))
+      const prevIds = new Set((selectedFurniture.items || []).map(fi => fi.item_id))
+      updatedItems = updatedItems.filter(fi => !prevIds.has(fi.item_id) || selectedIds.has(fi.item_id))
+      return { ...c, items: updatedItems }
+    }))
+    // Update dialog state
+    setSelectedFurniture(prev => {
+      if (!prev) return null
+      const selected = Object.entries(itemSelections)
+      let updatedItems = [...(prev.items || [])]
+      for (const [itemId, qty] of selected) {
+        const item = items.find(i => i.id === itemId)
+        if (!item) continue
+        const existingIdx = updatedItems.findIndex(fi => fi.item_id === itemId)
+        if (existingIdx >= 0) {
+          updatedItems[existingIdx] = { ...updatedItems[existingIdx], quantity: qty }
+        } else {
+          updatedItems.push({ item_id: itemId, quantity: qty, label: item.name, item })
+        }
+      }
+      const selectedIds = new Set(Object.keys(itemSelections))
+      const prevIds = new Set((prev.items || []).map(fi => fi.item_id))
+      updatedItems = updatedItems.filter(fi => !prevIds.has(fi.item_id) || selectedIds.has(fi.item_id))
+      return { ...prev, items: updatedItems }
+    })
+    toast.success(`已更新 ${selectedFurniture.label} 的器材（${selected.length} 項）`)
+    setAddItemsDialogOpen(false)
   }
 
   // ---- Actions ----
@@ -1207,34 +1288,87 @@ export default function ClassroomPage() {
                 ))}
               </div>
             )}
-            {/* Quick add item to this furniture */}
+            {/* Add items button */}
             {isTeacher && selectedFurniture && (
               <>
                 <Separator />
-                <p className="text-sm font-medium">快速新增器材：</p>
-                <div className="flex gap-1 items-end">
-                  <div className="flex-1">
-                    <Select
-                      onValueChange={v => {
-                        if (!v) return
-                        const item = items.find(i => i.id === v)
-                        if (item) handleAddItemToFurniture(selectedFurniture.row, selectedFurniture.col, item, addItemQty)
-                      }}
-                      items={items.map(i => ({ value: i.id, label: i.name }))}
-                    >
-                      <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="選擇物品" /></SelectTrigger>
-                      <SelectContent>
-                        {items.map(item => (
-                          <SelectItem key={item.id} value={item.id} label={item.name}>{item.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Input type="number" value={addItemQty} onChange={e => setAddItemQty(Number(e.target.value))} min={1} className="w-16 h-8 text-xs" />
-                </div>
+                <Button className="w-full" onClick={handleOpenAddItems}>
+                  <Plus className="w-4 h-4 mr-2" />新增 / 編輯器材
+                </Button>
               </>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Items Dialog */}
+      <Dialog open={addItemsDialogOpen} onOpenChange={setAddItemsDialogOpen}>
+        <DialogContent className="max-w-lg flex flex-col" style={{ maxHeight: "80vh" }}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="w-5 h-5" />
+              新增器材到「{selectedFurniture?.label}」
+            </DialogTitle>
+          </DialogHeader>
+          <Input
+            placeholder="搜尋器材名稱..."
+            value={addItemsSearch}
+            onChange={e => setAddItemsSearch(e.target.value)}
+            className="shrink-0"
+          />
+          <div className="flex-1 overflow-y-auto space-y-1 pr-1 min-h-0">
+            {items
+              .filter(item => !addItemsSearch.trim() || item.name.toLowerCase().includes(addItemsSearch.toLowerCase()))
+              .map(item => {
+                const qty = itemSelections[item.id] || 0
+                const isSelected = qty > 0
+                return (
+                  <div
+                    key={item.id}
+                    className={`flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors hover:bg-muted/50 ${isSelected ? "border-primary bg-primary/5" : "border-border"}`}
+                    onClick={() => handleToggleItem(item.id)}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      readOnly
+                      className="w-4 h-4 accent-primary shrink-0 pointer-events-none"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{item.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {(item.category as any)?.name || "未分類"} · 庫存 {item.quantity}{item.unit}
+                      </p>
+                    </div>
+                    {isSelected && (
+                      <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                        <Button
+                          variant="outline" size="icon" className="w-6 h-6 text-xs"
+                          onClick={() => handleAdjustQty(item.id, -1)}
+                        >-</Button>
+                        <span className="text-sm w-8 text-center font-medium">{qty}</span>
+                        <Button
+                          variant="outline" size="icon" className="w-6 h-6 text-xs"
+                          onClick={() => handleAdjustQty(item.id, 1)}
+                        >+</Button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            {items.filter(item => !addItemsSearch.trim() || item.name.toLowerCase().includes(addItemsSearch.toLowerCase())).length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-6">找不到符合的器材</p>
+            )}
+          </div>
+          <div className="text-xs text-muted-foreground shrink-0">
+            已選 {Object.keys(itemSelections).length} 項器材
+          </div>
+          <DialogFooter className="shrink-0">
+            <Button variant="outline" onClick={() => setAddItemsDialogOpen(false)}>取消</Button>
+            <Button onClick={handleConfirmAddItems} disabled={Object.keys(itemSelections).length === 0}>
+              確認（{Object.keys(itemSelections).length} 項）
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
