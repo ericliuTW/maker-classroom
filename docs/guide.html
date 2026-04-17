@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maker 教室管理系統 · 使用說明</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;900&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #FFFDF5;
+    --ink: #1A1A2E;
+    --soft: #6B6B8A;
+    --c1: #FF6B6B; --c1l: #FFE5E5;
+    --c2: #FF9A3C; --c2l: #FFF0DC;
+    --c3: #FFD166; --c3l: #FFFBD0;
+    --c4: #06D6A0; --c4l: #D0FFF4;
+    --c5: #118AB2; --c5l: #D0EFFF;
+    --c6: #845EC2; --c6l: #EDE0FF;
+    --c7: #F72585; --c7l: #FFD9EF;
+    --c8: #4CC9F0; --c8l: #D9F5FF;
+    --radius: 20px;
+    --shadow: 0 8px 32px rgba(0,0,0,0.10);
+    --shadow-lg: 0 16px 48px rgba(0,0,0,0.15);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Noto Sans TC', sans-serif;
+    background: var(--cream);
+    color: var(--ink);
+    overflow-x: hidden;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: sticky; top: 0; z-index: 999;
+    background: rgba(255,253,245,0.88);
+    backdrop-filter: blur(16px);
+    border-bottom: 2px solid #F0EDE0;
+    padding: 0 16px;
+  }
+  .nav-inner {
+    max-width: 900px; margin: 0 auto;
+    display: flex; align-items: center; gap: 8px;
+    overflow-x: auto; padding: 10px 0;
+    scrollbar-width: none;
+  }
+  .nav-inner::-webkit-scrollbar { display: none; }
+  .nav-pill {
+    flex-shrink: 0;
+    padding: 6px 14px; border-radius: 999px;
+    font-size: 13px; font-weight: 700;
+    text-decoration: none; color: var(--soft);
+    background: transparent;
+    border: 2px solid transparent;
+    transition: all .2s;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .nav-pill:hover { background: #F0EDE0; color: var(--ink); }
+  .nav-logo {
+    font-family: 'Nunito', sans-serif;
+    font-weight: 900; font-size: 18px;
+    background: linear-gradient(135deg, var(--c1), var(--c6));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-right: 8px; white-space: nowrap;
+  }
+
+  /* ── HERO ── */
+  .hero {
+    position: relative;
+    min-height: 92vh;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 80px 20px 60px;
+    overflow: hidden;
+    text-align: center;
+  }
+  .hero-bg {
+    position: absolute; inset: 0; z-index: 0;
+    background:
+      radial-gradient(ellipse 80% 60% at 20% 20%, #FFE5E5 0%, transparent 60%),
+      radial-gradient(ellipse 60% 60% at 80% 80%, #EDE0FF 0%, transparent 60%),
+      radial-gradient(ellipse 50% 50% at 60% 10%, #D0EFFF 0%, transparent 50%),
+      radial-gradient(ellipse 40% 40% at 10% 80%, #D0FFF4 0%, transparent 50%);
+  }
+  .hero-deco {
+    position: absolute; z-index: 0;
+    border-radius: 50%; opacity: 0.18; filter: blur(2px);
+    animation: float 6s ease-in-out infinite;
+  }
+  .hero-deco:nth-child(2) { width:120px;height:120px;background:var(--c1);top:8%;left:5%;animation-delay:0s; }
+  .hero-deco:nth-child(3) { width:80px;height:80px;background:var(--c3);top:15%;right:10%;animation-delay:1s; }
+  .hero-deco:nth-child(4) { width:100px;height:100px;background:var(--c5);bottom:20%;left:8%;animation-delay:2s; }
+  .hero-deco:nth-child(5) { width:60px;height:60px;background:var(--c6);bottom:25%;right:5%;animation-delay:.5s; }
+  .hero-deco:nth-child(6) { width:50px;height:50px;background:var(--c4);top:45%;left:2%;animation-delay:1.5s; }
+
+  @keyframes float {
+    0%,100% { transform: translateY(0) rotate(0deg); }
+    50% { transform: translateY(-18px) rotate(8deg); }
+  }
+  .hero-content { position: relative; z-index: 1; max-width: 680px; }
+  .hero-badge {
+    display: inline-block;
+    background: white; border: 2px solid #F0EDE0;
+    border-radius: 999px; padding: 6px 18px;
+    font-size: 13px; font-weight: 700; color: var(--soft);
+    margin-bottom: 24px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.06);
+    animation: fadeUp .6s ease both;
+  }
+  .hero-title {
+    font-family: 'Nunito', sans-serif;
+    font-weight: 900; font-size: clamp(2.4rem, 8vw, 4.2rem);
+    line-height: 1.15; letter-spacing: -1px;
+    margin-bottom: 16px;
+    animation: fadeUp .6s .1s ease both;
+  }
+  .hero-title span {
+    display: block;
+    background: linear-gradient(135deg, var(--c1) 0%, var(--c6) 50%, var(--c5) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .hero-sub {
+    font-size: clamp(1rem, 3vw, 1.2rem);
+    color: var(--soft); line-height: 1.8;
+    margin-bottom: 36px;
+    animation: fadeUp .6s .2s ease both;
+  }
+  .hero-emojis {
+    font-size: clamp(2rem, 7vw, 3.2rem);
+    letter-spacing: 8px; margin-bottom: 36px;
+    animation: fadeUp .6s .3s ease both;
+  }
+  .hero-cta {
+    display: inline-flex; gap: 12px; flex-wrap: wrap; justify-content: center;
+    animation: fadeUp .6s .4s ease both;
+  }
+  .btn {
+    padding: 14px 28px; border-radius: 999px;
+    font-size: 15px; font-weight: 700;
+    text-decoration: none; border: none; cursor: pointer;
+    transition: transform .2s, box-shadow .2s;
+  }
+  .btn:hover { transform: translateY(-3px); box-shadow: 0 12px 24px rgba(0,0,0,.15); }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--c1), var(--c6));
+    color: white;
+    box-shadow: 0 6px 20px rgba(132,94,194,.35);
+  }
+  .btn-secondary {
+    background: white; color: var(--ink);
+    border: 2px solid #E8E4D8;
+    box-shadow: 0 4px 12px rgba(0,0,0,.06);
+  }
+
+  /* ── SECTIONS ── */
+  .section { padding: 80px 20px; max-width: 900px; margin: 0 auto; }
+  .section-title {
+    font-family: 'Nunito', sans-serif;
+    font-weight: 900; font-size: clamp(1.8rem, 5vw, 2.6rem);
+    margin-bottom: 8px; text-align: center;
+  }
+  .section-sub { color: var(--soft); text-align: center; margin-bottom: 48px; font-size: 15px; line-height: 1.8; }
+
+  /* ── IDENTITY CARDS ── */
+  .identity-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+  }
+  @media(max-width:560px) { .identity-grid { grid-template-columns: 1fr; } }
+
+  .id-card {
+    border-radius: var(--radius);
+    padding: 32px 28px;
+    position: relative; overflow: hidden;
+  }
+  .id-card.teacher {
+    background: linear-gradient(135deg, #FF6B6B, #FF9A3C);
+    color: white;
+  }
+  .id-card.student {
+    background: linear-gradient(135deg, #118AB2, #06D6A0);
+    color: white;
+  }
+  .id-card-emoji { font-size: 3rem; margin-bottom: 16px; display: block; }
+  .id-card-title {
+    font-family: 'Nunito', sans-serif; font-weight: 900;
+    font-size: 1.5rem; margin-bottom: 8px;
+  }
+  .id-card-desc { font-size: 14px; line-height: 1.8; opacity: .9; margin-bottom: 20px; }
+  .id-card-list { list-style: none; }
+  .id-card-list li {
+    font-size: 13px; padding: 5px 0;
+    border-bottom: 1px solid rgba(255,255,255,.2);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .id-card-list li::before { content: "✓"; font-weight: 900; }
+  .id-badge {
+    display: inline-block;
+    background: rgba(255,255,255,.25);
+    border: 2px solid rgba(255,255,255,.5);
+    border-radius: 999px; padding: 4px 14px;
+    font-size: 12px; font-weight: 700;
+    margin-bottom: 16px;
+  }
+
+  /* ── QUICK START ── */
+  .steps-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;
+  }
+  .step-card {
+    background: white; border-radius: var(--radius);
+    padding: 24px 20px; text-align: center;
+    box-shadow: var(--shadow);
+    border: 2px solid #F0EDE0;
+    transition: transform .2s, box-shadow .2s;
+    position: relative;
+  }
+  .step-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+  .step-num {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--c6), var(--c5));
+    color: white; font-weight: 900; font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 14px;
+    font-family: 'Nunito', sans-serif;
+  }
+  .step-icon { font-size: 2rem; margin-bottom: 10px; }
+  .step-title { font-weight: 700; font-size: 15px; margin-bottom: 6px; }
+  .step-desc { font-size: 13px; color: var(--soft); line-height: 1.7; }
+
+  /* ── FEATURES ── */
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+  }
+  .feat-card {
+    border-radius: var(--radius);
+    padding: 28px 24px;
+    position: relative; overflow: hidden;
+    transition: transform .25s, box-shadow .25s;
+    cursor: default;
+  }
+  .feat-card:hover { transform: translateY(-6px) scale(1.01); box-shadow: var(--shadow-lg); }
+  .feat-card::before {
+    content: '';
+    position: absolute; top: -40px; right: -40px;
+    width: 120px; height: 120px; border-radius: 50%;
+    background: rgba(255,255,255,.15);
+  }
+  .feat-emoji { font-size: 2.4rem; margin-bottom: 14px; display: block; }
+  .feat-title {
+    font-family: 'Nunito', sans-serif; font-weight: 900;
+    font-size: 1.15rem; margin-bottom: 8px; color: inherit;
+  }
+  .feat-desc { font-size: 13px; line-height: 1.8; opacity: .88; margin-bottom: 16px; }
+  .feat-steps { list-style: none; }
+  .feat-steps li {
+    font-size: 12.5px; padding: 4px 0;
+    border-top: 1px solid rgba(255,255,255,.2);
+    display: flex; align-items: flex-start; gap: 6px;
+    line-height: 1.6;
+  }
+  .feat-steps li span.n {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: rgba(255,255,255,.35);
+    font-size: 10px; font-weight: 900;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; margin-top: 1px;
+  }
+
+  .fc1 { background: linear-gradient(135deg, var(--c1), #FF9A3C); color: white; }
+  .fc2 { background: linear-gradient(135deg, #FF9A3C, #FFD166); color: #2D2D00; }
+  .fc3 { background: linear-gradient(135deg, var(--c4), #118AB2); color: white; }
+  .fc4 { background: linear-gradient(135deg, var(--c5), #4CC9F0); color: white; }
+  .fc5 { background: linear-gradient(135deg, var(--c6), var(--c7)); color: white; }
+  .fc6 { background: linear-gradient(135deg, #F72585, #FF9A3C); color: white; }
+  .fc7 { background: linear-gradient(135deg, #06D6A0, #118AB2); color: white; }
+  .fc8 { background: linear-gradient(135deg, #4CC9F0, #845EC2); color: white; }
+
+  .fc2 .feat-steps li { border-color: rgba(0,0,0,.1); }
+  .fc2 .feat-steps li span.n { background: rgba(0,0,0,.12); }
+
+  /* ── TIPS ── */
+  .tips-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;
+  }
+  .tip-card {
+    background: white; border-radius: var(--radius);
+    padding: 22px 20px; box-shadow: var(--shadow);
+    border: 2px solid #F0EDE0;
+    display: flex; align-items: flex-start; gap: 14px;
+  }
+  .tip-icon {
+    width: 44px; height: 44px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.4rem; flex-shrink: 0;
+  }
+  .tip-content h4 { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+  .tip-content p { font-size: 13px; color: var(--soft); line-height: 1.7; }
+  .ti1 { background: var(--c1l); }
+  .ti2 { background: var(--c3l); }
+  .ti3 { background: var(--c4l); }
+  .ti4 { background: var(--c6l); }
+  .ti5 { background: var(--c2l); }
+  .ti6 { background: var(--c5l); }
+
+  /* ── FOOTER ── */
+  .footer {
+    background: var(--ink); color: white;
+    padding: 60px 20px 40px;
+    text-align: center;
+  }
+  .footer-title {
+    font-family: 'Nunito', sans-serif; font-weight: 900;
+    font-size: 1.8rem; margin-bottom: 8px;
+    background: linear-gradient(135deg, var(--c3), var(--c4));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .footer-sub { color: rgba(255,255,255,.5); font-size: 14px; margin-bottom: 40px; }
+  .footer-link-box {
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.15);
+    border-radius: var(--radius);
+    padding: 28px; max-width: 500px; margin: 0 auto 36px;
+  }
+  .footer-link-box p { font-size: 13px; color: rgba(255,255,255,.6); margin-bottom: 12px; }
+  .footer-url {
+    font-family: 'Nunito', sans-serif; font-weight: 700;
+    font-size: 1.05rem; color: var(--c3);
+    word-break: break-all;
+    background: rgba(255,255,255,.05);
+    border-radius: 10px; padding: 10px 16px;
+    display: block;
+  }
+  .footer-note { font-size: 12px; color: rgba(255,255,255,.3); margin-top: 32px; }
+
+  /* ── DIVIDER ── */
+  .wavy-divider {
+    text-align: center; overflow: hidden;
+    line-height: 0; background: transparent;
+  }
+  .wavy-divider svg { display: block; width: 100%; }
+
+  /* ── UTILS ── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .fade-in {
+    opacity: 0;
+    transform: translateY(30px);
+    transition: opacity .6s ease, transform .6s ease;
+  }
+  .fade-in.visible { opacity: 1; transform: translateY(0); }
+
+  .section-pill {
+    display: inline-block;
+    border-radius: 999px; padding: 4px 16px;
+    font-size: 12px; font-weight: 700;
+    margin-bottom: 14px; letter-spacing: .5px;
+    text-transform: uppercase;
+  }
+  .pill-orange { background: var(--c2l); color: #A35A00; }
+  .pill-green { background: var(--c4l); color: #006B52; }
+  .pill-purple { background: var(--c6l); color: #4A1A8C; }
+  .pill-blue { background: var(--c5l); color: #004E6A; }
+  .pill-red { background: var(--c1l); color: #8B0000; }
+
+  .highlight-box {
+    background: linear-gradient(135deg, #FFF9E6, #FFFBE0);
+    border: 2px solid #FFE566;
+    border-radius: var(--radius); padding: 24px 28px;
+    margin: 40px 0;
+  }
+  .highlight-box h3 {
+    font-family: 'Nunito', sans-serif; font-weight: 900;
+    font-size: 1.1rem; margin-bottom: 10px;
+    color: #7A5A00;
+  }
+  .highlight-box p { font-size: 14px; color: #5A4200; line-height: 1.8; }
+
+  @media(max-width:480px) {
+    .features-grid { grid-template-columns: 1fr; }
+    .feat-card { padding: 22px 18px; }
+    .hero { min-height: 85vh; }
+    .section { padding: 60px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-inner">
+    <span class="nav-logo">🛠 Maker系統</span>
+    <a class="nav-pill" href="#identity">身份說明</a>
+    <a class="nav-pill" href="#start">快速開始</a>
+    <a class="nav-pill" href="#features">功能介紹</a>
+    <a class="nav-pill" href="#tips">使用技巧</a>
+    <a class="nav-pill" href="#footer">系統連結</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-deco"></div>
+  <div class="hero-deco"></div>
+  <div class="hero-deco"></div>
+  <div class="hero-deco"></div>
+  <div class="hero-deco"></div>
+  <div class="hero-content">
+    <div class="hero-badge">🎉 教師專屬使用指南</div>
+    <h1 class="hero-title">
+      Maker 教室<span>管理系統</span>
+    </h1>
+    <p class="hero-sub">
+      讓材料管理、設備借用、專案規劃<br>
+      全都在一個地方搞定 ✨<br>
+      <strong>教師省時省力，學生學習更有效率</strong>
+    </p>
+    <div class="hero-emojis">📦 🤖 🏫 📱</div>
+    <div class="hero-cta">
+      <a href="#features" class="btn btn-primary">👀 看看有什麼功能</a>
+      <a href="#start" class="btn btn-secondary">🚀 怎麼開始使用？</a>
+    </div>
+  </div>
+</section>
+
+<!-- IDENTITY -->
+<section class="section" id="identity">
+  <div class="fade-in">
+    <div style="text-align:center">
+      <span class="section-pill pill-orange">👥 身份系統</span>
+    </div>
+    <h2 class="section-title">兩種使用身份</h2>
+    <p class="section-sub">試用期間統一以「使用代碼」登入，無需帳號密碼</p>
+    <div class="identity-grid">
+      <div class="id-card teacher">
+        <span class="id-badge">教師專屬</span>
+        <span class="id-card-emoji">👩‍🏫</span>
+        <div class="id-card-title">教師帳號</div>
+        <div class="id-card-desc">
+          使用教師專屬代碼登入，擁有完整管理權限。可新增庫存、管理教室配置、產生使用代碼讓學生登入。（正式版將支援 Email 帳號）
+        </div>
+        <ul class="id-card-list">
+          <li>管理所有庫存與分類</li>
+          <li>新增 / 刪除家具與教室配置</li>
+          <li>產生學生使用代碼</li>
+          <li>確認 / 取消預約</li>
+          <li>查看所有異動記錄</li>
+          <li>調整系統設定</li>
+        </ul>
+      </div>
+      <div class="id-card student">
+        <span class="id-badge">學生使用</span>
+        <span class="id-card-emoji">🧑‍🔬</span>
+        <div class="id-card-title">學生帳號</div>
+        <div class="id-card-desc">
+          輸入教師給的「使用代碼」即可登入，不需要真實個資。學生可以規劃自己的專案、借用設備、查看教室配置。
+        </div>
+        <ul class="id-card-list">
+          <li>建立與管理自己的專案規劃</li>
+          <li>使用 AI 設計師規劃專案</li>
+          <li>查看庫存與教室配置圖</li>
+          <li>掃碼借用 / 歸還材料</li>
+          <li>查看設備排程與預約</li>
+        </ul>
+      </div>
+    </div>
+    <div class="highlight-box" style="margin-top:28px">
+      <h3>💡 關於使用代碼</h3>
+      <p>前往「系統設定」→「使用代碼管理」，點擊「新增代碼」即可產生代碼，將代碼傳給學生，學生在登入頁面輸入代碼即可進入系統。代碼可設定有效期限，保護系統安全。</p>
+    </div>
+  </div>
+</section>
+
+<!-- QUICK START -->
+<section class="section" id="start" style="padding-top:0">
+  <div class="fade-in">
+    <div style="text-align:center">
+      <span class="section-pill pill-green">🚀 快速開始</span>
+    </div>
+    <h2 class="section-title">三步驟上手</h2>
+    <p class="section-sub">第一次使用，從這裡開始</p>
+    <div class="steps-grid">
+      <div class="step-card">
+        <div class="step-num">1</div>
+        <div class="step-icon">🌐</div>
+        <div class="step-title">進入系統</div>
+        <div class="step-desc">開啟瀏覽器，前往系統網址。手機、平板、電腦都能使用。</div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">2</div>
+        <div class="step-icon">🔑</div>
+        <div class="step-title">輸入使用代碼</div>
+        <div class="step-desc">教師點「教師登入」輸入教師代碼；學生點「學生入口」輸入學生代碼。代碼由管理員提供。</div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">3</div>
+        <div class="step-icon">✅</div>
+        <div class="step-title">開始使用</div>
+        <div class="step-desc">登入後看到主選單，點左側或底部導覽列切換功能。手機直接滑動導覽。</div>
+      </div>
+    </div>
+    <div class="highlight-box">
+      <h3>📲 手機操作小提示</h3>
+      <p>系統已針對手機螢幕最佳化！<br>建議將網址加入「主畫面捷徑」，開啟後就像在用 App 一樣方便。iOS：Safari 底部點「分享」→「加入主畫面」；Android：Chrome 右上角點「…」→「新增至主畫面」。</p>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="section" id="features" style="padding-top:0">
+  <div class="fade-in">
+    <div style="text-align:center">
+      <span class="section-pill pill-purple">✨ 功能介紹</span>
+    </div>
+    <h2 class="section-title">八大核心功能</h2>
+    <p class="section-sub">從庫存管理到 AI 輔助，每個功能都為 Maker 教室量身設計</p>
+  </div>
+  <div class="features-grid">
+
+    <div class="feat-card fc1 fade-in">
+      <span class="feat-emoji">📦</span>
+      <div class="feat-title">庫存管理</div>
+      <div class="feat-desc">掌握所有材料與設備的庫存數量、位置、狀態。支援分類篩選、搜尋，以及條碼/QR 掃描快速查找物品。</div>
+      <ul class="feat-steps">
+        <li><span class="n">1</span>左側選單點「庫存管理」</li>
+        <li><span class="n">2</span>右上角「＋ 新增物品」輸入名稱、數量、單位</li>
+        <li><span class="n">3</span>設定分類與最低庫存警示量</li>
+        <li><span class="n">4</span>庫存不足時系統自動顯示⚠️警示</li>
+      </ul>
+    </div>
+
+    <div class="feat-card fc2 fade-in">
+      <span class="feat-emoji">📋</span>
+      <div class="feat-title">異動管理</div>
+      <div class="feat-desc">記錄所有借用、歸還、採購、報修等異動紀錄。教師可確認狀態，清楚追蹤每項物品的去向。</div>
+      <ul class="feat-steps">
+        <li><span class="n">1</span>選單點「異動管理」查看所有紀錄</li>
+        <li><span class="n">2</span>用上方篩選器過濾「借出」「歸還」等類型</li>
+        <li><span class="n">3</span>教師可點紀錄修改狀態（待處理→完成）</li>
+        <li><span class="n">4</span>搜尋特定物品的所有異動歷史</li>
+      </ul>
+    </div>
+
+    <div class="feat-card fc3 fade-in">
+      <span class="feat-emoji">🏫</span>
+      <div class="feat-title">教室配置圖</div>
+      <div class="feat-desc">視覺化教室平面圖！拖曳家具安排位置，點擊任一家具即可設定存放哪些材料與數量，讓學生一眼找到東西在哪。</div>
+      <ul class="feat-steps">
+        <li><span class="n">1</span>教師：左側展開「放置家具」新增桌椅</li>
+        <li><span class="n">2</span>從「庫存物品」清單拖曳材料到家具上</li>
+        <li><span class="n">3</span>或點擊家具 → 「新增 / 編輯器材」勾選物品</li>
+        <li><span class="n">4</span>按「儲存」完成，學生即可查看配置</li>
+      </ul>
+    </div>
+
+    <div class="feat-card fc4 fade-in">
+      <span class="feat-emoji">📱</span>
+      <div class="feat-title">掃碼作業</div>
+      <div class="feat-desc">用手機鏡頭掃描物品的條碼或 QR Code，快速完成借用與歸還。不需要繁瑣的手動輸入，課堂更流暢！</div>
+      <ul class="feat-steps">
+        <li><span class="n">1</span>點「掃碼作業」，允許使用鏡頭權限</li>
+        <li><span class="n">2</span>對準物品條碼，自動辨識物品資訊</li>
+        <li><span class="n">3</span>選擇操作類型（借出 / 歸還 / 採購）</li>
+        <li><span class="n">4</span>確認後系統自動更新庫存與異動紀錄</li>
+      </ul>
+    </div>
+
+    <div class="feat-card fc5 fade-in">
+      <span class="feat-emoji">🤖</span>
+      <div class="feat-title">AI 專案設計師</div>
+      <div class="feat-desc">輸入專案主題，AI 自動生成完整的材料清單、設備需求、製作步驟！特別標示教室內現有的材料，讓學生即時規劃。</div>
+      <ul class="feat-steps">
+        <li><span class="n">1</span>點「AI 專案設計師」，輸入專案想法</li>
+        <li><span class="n">2</span>AI 自動規劃材料、設備、步驟清單</li>
+        <li><span class="n">3</span>✅ 標示教室已有的材料（省去採購）</li>
+        <li><span class="n">4</span>一鍵匯入「專案規劃區」繼續規劃</li>
+      </ul>
+    </div>
+
+    <div class="feat-card fc6 fade-in">
+      <span class="feat-emoji">📚</span>
+      <div class="feat-title">專案知識庫</div>
+      <div class="feat-desc">收集各類 Maker 專案教學資源，依技能標籤、難易度分類。學生可以快速找到感興趣的專案，老師可匯入優質教案。</div>
+      <ul class="feat-steps">
+        <li><span class="n">1</span>點「專案知識庫」瀏覽所有教案</li>
+        <li><span class="n">2</span>用難度（入門/中級/進階）篩選</li>
+        <li><span class="n">3</span>點開某個專案查看詳細步驟與所需材料</li>
+        <li><span class="n">4</span>教師可匯入新教案，系統每日自動更新</li>
+      </ul>
+    </div>
+
+    <div class="feat-card fc7 fade-in">
+      <span class="feat-emoji">🗓️</span>
+      <div class="feat-title">專案規劃區</div>
+      <div class="feat-desc">學生規劃專案的核心！可建立材料清單、選擇需要的設備，並在週曆上查看每樣設備哪個時段可以借用，直接點擊排程。</div>
+      <ul class="feat-steps">
+        <li><span class="n">1</span>點「＋ 新增專案」或從 AI 設計師匯入</li>
+        <li><span class="n">2</span>在「設備清單」點條目選擇設備</li>
+        <li><span class="n">3</span>展開週曆：綠色=可借、紅色=已佔用</li>
+        <li><span class="n">4</span>點綠色格子直接排定借用時段</li>
+      </ul>
+    </div>
+
+    <div class="feat-card fc8 fade-in">
+      <span class="feat-emoji">📅</span>
+      <div class="feat-title">預約排程</div>
+      <div class="feat-desc">管理教室設備的借用預約。日曆視圖一眼看出哪些時段已被佔用，教師可確認或取消預約，避免設備衝突。</div>
+      <ul class="feat-steps">
+        <li><span class="n">1</span>點「預約排程」查看月曆或清單</li>
+        <li><span class="n">2</span>點「＋ 新增預約」手動建立借用</li>
+        <li><span class="n">3</span>紅色=已確認佔用，黃色=待確認</li>
+        <li><span class="n">4</span>教師點預約可確認或取消</li>
+      </ul>
+    </div>
+
+  </div>
+</section>
+
+<!-- TIPS -->
+<section class="section" id="tips" style="padding-top:0">
+  <div class="fade-in">
+    <div style="text-align:center">
+      <span class="section-pill pill-blue">💡 使用技巧</span>
+    </div>
+    <h2 class="section-title">讓系統更好用的小撇步</h2>
+    <p class="section-sub">從其他老師的使用經驗中整理出來的實用建議</p>
+    <div class="tips-grid">
+      <div class="tip-card">
+        <div class="tip-icon ti1">🏷️</div>
+        <div class="tip-content">
+          <h4>先建好分類再新增物品</h4>
+          <p>進入「系統設定」→「分類管理」先建立好分類（如：電子材料、木工工具），之後新增物品時更好篩選管理。</p>
+        </div>
+      </div>
+      <div class="tip-card">
+        <div class="tip-icon ti2">🎫</div>
+        <div class="tip-content">
+          <h4>每組一個使用代碼</h4>
+          <p>建議每個學習小組產生一組代碼，便於追蹤哪組借了什麼、哪組做了什麼專案，方便評分與管理。</p>
+        </div>
+      </div>
+      <div class="tip-card">
+        <div class="tip-icon ti3">📸</div>
+        <div class="tip-content">
+          <h4>物品貼上條碼標籤</h4>
+          <p>在常用設備上貼 QR Code 或條碼貼紙，學生只需掃一下就能快速借用，課堂管理輕鬆很多！</p>
+        </div>
+      </div>
+      <div class="tip-card">
+        <div class="tip-icon ti4">🤖</div>
+        <div class="tip-content">
+          <h4>AI 設計師啟動靈感</h4>
+          <p>學生不知道要做什麼？讓他們先試試 AI 專案設計師，輸入「想做一個能動的東西」，AI 會給出豐富的提案。</p>
+        </div>
+      </div>
+      <div class="tip-card">
+        <div class="tip-icon ti5">🗺️</div>
+        <div class="tip-content">
+          <h4>開學先更新教室配置圖</h4>
+          <p>每學期初花 10 分鐘更新一下教室配置圖，讓學生知道每樣材料放在哪個架子/桌子，減少「老師我找不到 XX」的問題。</p>
+        </div>
+      </div>
+      <div class="tip-card">
+        <div class="tip-icon ti6">📊</div>
+        <div class="tip-content">
+          <h4>定期看異動管理</h4>
+          <p>每週瞄一眼異動紀錄，快速掌握哪些材料消耗快、哪些設備常借用，有助於採購規劃與庫存補充。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="footer" id="footer">
+  <div class="footer-title">🛠️ Maker 教室管理系統</div>
+  <div class="footer-sub">讓 Maker 教育更有條理，讓學習更自由 ✨</div>
+
+  <div class="footer-link-box">
+    <p>🌐 系統網址（請複製後用瀏覽器開啟）</p>
+    <span class="footer-url">https://maker-classroom.vercel.app</span>
+    <div style="margin-top:16px;font-size:13px;color:rgba(255,255,255,.5)">
+      建議使用 Chrome 或 Safari 瀏覽器 · 支援手機/平板/電腦
+    </div>
+  </div>
+
+  <!-- 試用說明 -->
+  <div style="background:linear-gradient(135deg,rgba(255,209,102,.15),rgba(6,214,160,.12));border:2px solid rgba(255,209,102,.35);border-radius:20px;padding:28px 24px;max-width:560px;margin:0 auto 28px;text-align:left">
+    <div style="font-size:1.4rem;margin-bottom:10px">🧪</div>
+    <div style="font-size:16px;font-weight:900;color:#FFD166;font-family:'Nunito',sans-serif;margin-bottom:8px">目前為試用展示版</div>
+    <div style="font-size:14px;color:rgba(255,255,255,.7);line-height:1.8">
+      這份說明是讓大家先<strong style="color:white">了解系統功能</strong>、提供意見回饋用的。<br>
+      系統功能完整後，會再開放正式帳號給各位使用 😊
+    </div>
+  </div>
+
+  <!-- 回饋邀請 -->
+  <div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:28px 24px;max-width:560px;margin:0 auto 28px">
+    <div style="font-size:1.4rem;margin-bottom:10px">💬</div>
+    <div style="font-size:15px;font-weight:900;color:white;font-family:'Nunito',sans-serif;margin-bottom:14px">你覺得這樣的系統好用嗎？</div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="background:rgba(255,255,255,.05);border-radius:12px;padding:12px 16px;font-size:13px;color:rgba(255,255,255,.6);line-height:1.7">
+        🙋 哪個功能你覺得最實用？
+      </div>
+      <div style="background:rgba(255,255,255,.05);border-radius:12px;padding:12px 16px;font-size:13px;color:rgba(255,255,255,.6);line-height:1.7">
+        🤔 有沒有覺得少了什麼功能？
+      </div>
+      <div style="background:rgba(255,255,255,.05);border-radius:12px;padding:12px 16px;font-size:13px;color:rgba(255,255,255,.6);line-height:1.7">
+        📱 介面操作上有沒有不清楚的地方？
+      </div>
+    </div>
+    <div style="margin-top:18px;font-size:13px;color:rgba(255,255,255,.45)">
+      👉 歡迎直接回覆這則訊息告訴我！你的意見會讓系統更好用 🙏
+    </div>
+  </div>
+
+  <div class="footer-note">
+    此說明文件由 Maker 教室管理系統 自動產生 · 歡迎轉傳給其他老師使用
+  </div>
+</footer>
+
+<script>
+  // Smooth scroll for nav pills
+  document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      const target = document.querySelector(a.getAttribute('href'));
+      if (target) {
+        const offset = 64;
+        const top = target.getBoundingClientRect().top + window.scrollY - offset;
+        window.scrollTo({ top, behavior: 'smooth' });
+      }
+    });
+  });
+
+  // Intersection observer for fade-in
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('visible');
+        observer.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+  document.querySelectorAll('.fade-in').forEach((el, i) => {
+    el.style.transitionDelay = `${(i % 4) * 0.08}s`;
+    observer.observe(el);
+  });
+
+  // Active nav highlight on scroll
+  const sections = ['identity','start','features','tips','footer'];
+  const pills = document.querySelectorAll('.nav-pill');
+  window.addEventListener('scroll', () => {
+    const y = window.scrollY + 100;
+    let active = '';
+    sections.forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.offsetTop <= y) active = id;
+    });
+    pills.forEach(p => {
+      const href = p.getAttribute('href');
+      if (href && href === '#' + active) {
+        p.style.background = '#F0EDE0';
+        p.style.color = '#1A1A2E';
+      } else {
+        p.style.background = '';
+        p.style.color = '';
+      }
+    });
+  });
+</script>
+</body>
+</html>
