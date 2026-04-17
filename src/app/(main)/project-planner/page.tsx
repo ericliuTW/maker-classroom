@@ -186,14 +186,15 @@ export default function ProjectPlannerPage() {
                     </span>
                   )}
                 </div>
-                {isTeacher && (
-                  <div className="flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                {(isTeacher || plan.session_token === sessionToken) && (
+                  <div className="flex justify-end">
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={(e) => { e.stopPropagation(); handleDelete(plan.id) }}
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
                     >
-                      <Trash2 className="w-4 h-4 text-destructive" />
+                      <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
                 )}

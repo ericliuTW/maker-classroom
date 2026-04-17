@@ -1070,10 +1070,11 @@ export default function ClassroomPage() {
       ) : (
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div className="flex flex-col lg:flex-row gap-4">
-            {/* Sidebar — teacher only */}
-            {isTeacher && (
-              <div className="w-full lg:w-56 shrink-0 space-y-3">
-                {/* Add furniture */}
+            {/* Sidebar */}
+            <div className="w-full lg:w-56 shrink-0 space-y-3">
+
+              {/* Add furniture — teacher only */}
+              {isTeacher && (
                 <Card>
                   <CardHeader className="pb-2 pt-3 px-3">
                     <CardTitle className="text-xs flex items-center justify-between">
@@ -1128,21 +1129,26 @@ export default function ClassroomPage() {
                     </CardContent>
                   )}
                 </Card>
+              )}
 
-                {/* Items list (draggable) */}
-                <Card>
-                  <CardHeader className="pb-2 pt-3 px-3">
-                    <CardTitle className="text-xs">庫存物品（拖入家具）</CardTitle>
-                  </CardHeader>
-                  <CardContent className="px-3 pb-3">
-                    <div className="space-y-0.5 max-h-[35vh] overflow-y-auto">
-                      {items.map(item => <DraggableItem key={item.id} item={item} />)}
-                      {items.length === 0 && <p className="text-xs text-muted-foreground text-center py-3">尚無庫存物品</p>}
-                    </div>
-                  </CardContent>
-                </Card>
+              {/* Items list — visible to all, draggable for everyone */}
+              <Card>
+                <CardHeader className="pb-2 pt-3 px-3">
+                  <CardTitle className="text-xs">庫存物品</CardTitle>
+                </CardHeader>
+                <CardContent className="px-3 pb-3">
+                  <p className="text-[10px] text-muted-foreground mb-1.5">
+                    拖曳到家具上，或點擊家具後選擇「新增器材」
+                  </p>
+                  <div className="space-y-0.5 max-h-[40vh] overflow-y-auto">
+                    {items.map(item => <DraggableItem key={item.id} item={item} />)}
+                    {items.length === 0 && <p className="text-xs text-muted-foreground text-center py-3">尚無庫存物品</p>}
+                  </div>
+                </CardContent>
+              </Card>
 
-                {/* Version controls */}
+              {/* Version controls — teacher only */}
+              {isTeacher && (
                 <Card>
                   <CardHeader className="pb-2 pt-3 px-3">
                     <CardTitle className="text-xs">版本管理</CardTitle>
@@ -1163,8 +1169,8 @@ export default function ClassroomPage() {
                     </Button>
                   </CardContent>
                 </Card>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Main area: Grid + Equipment list */}
             <div className="flex-1 space-y-4">
@@ -1209,11 +1215,9 @@ export default function ClassroomPage() {
                     />
                   ))}
                 </div>
-                {isTeacher && (
-                  <p className="text-[10px] text-muted-foreground mt-2">
-                    從左側拖曳物品到家具上放入。點擊家具查看/管理內容物。
-                  </p>
-                )}
+                <p className="text-[10px] text-muted-foreground mt-2">
+                  從左側拖曳物品到家具上放入，或點擊家具 → 「新增 / 編輯器材」選擇並設定數量。
+                </p>
               </div>
 
               {/* Equipment list panel (toggleable) */}
@@ -1258,7 +1262,7 @@ export default function ClassroomPage() {
             <Separator />
             <p className="text-sm font-medium">存放器材：</p>
             {(!selectedFurniture?.items || selectedFurniture.items.length === 0) ? (
-              <p className="text-sm text-muted-foreground">尚無器材。{isTeacher ? "從側邊欄拖曳物品到此家具上。" : ""}</p>
+              <p className="text-sm text-muted-foreground">尚無器材。從左側拖曳物品到家具，或點擊下方按鈕新增。</p>
             ) : (
               <div className="space-y-2">
                 {selectedFurniture.items.map(fi => (
@@ -1270,26 +1274,24 @@ export default function ClassroomPage() {
                       <p className="text-sm font-medium truncate">{fi.item?.name || fi.label}</p>
                       {fi.item?.category && <p className="text-xs text-muted-foreground">{(fi.item.category as any)?.name}</p>}
                     </div>
-                    {isTeacher && (
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Button variant="outline" size="icon" className="w-6 h-6"
-                          onClick={() => handleUpdateItemQty(selectedFurniture!.row, selectedFurniture!.col, fi.item_id, fi.quantity - 1)}
-                        >-</Button>
-                        <span className="text-xs w-6 text-center">{fi.quantity}</span>
-                        <Button variant="outline" size="icon" className="w-6 h-6"
-                          onClick={() => handleUpdateItemQty(selectedFurniture!.row, selectedFurniture!.col, fi.item_id, fi.quantity + 1)}
-                        >+</Button>
-                        <Button variant="ghost" size="icon" className="w-6 h-6 text-destructive"
-                          onClick={() => handleRemoveItemFromFurniture(selectedFurniture!.row, selectedFurniture!.col, fi.item_id)}
-                        ><Trash2 className="w-3 h-3" /></Button>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button variant="outline" size="icon" className="w-6 h-6"
+                        onClick={() => handleUpdateItemQty(selectedFurniture!.row, selectedFurniture!.col, fi.item_id, fi.quantity - 1)}
+                      >-</Button>
+                      <span className="text-xs w-6 text-center">{fi.quantity}</span>
+                      <Button variant="outline" size="icon" className="w-6 h-6"
+                        onClick={() => handleUpdateItemQty(selectedFurniture!.row, selectedFurniture!.col, fi.item_id, fi.quantity + 1)}
+                      >+</Button>
+                      <Button variant="ghost" size="icon" className="w-6 h-6 text-destructive"
+                        onClick={() => handleRemoveItemFromFurniture(selectedFurniture!.row, selectedFurniture!.col, fi.item_id)}
+                      ><Trash2 className="w-3 h-3" /></Button>
+                    </div>
                   </div>
                 ))}
               </div>
             )}
-            {/* Add items button */}
-            {isTeacher && selectedFurniture && (
+            {/* Add items button — available to all */}
+            {selectedFurniture && (
               <>
                 <Separator />
                 <Button className="w-full" onClick={handleOpenAddItems}>
